@@ -10,3 +10,4 @@ __pycache__/
 
 # Local data (SQLite database, traces)
 data/
+~$*
