@@ -1,4 +1,4 @@
-"""Backend for any OpenAI-compatible Chat Completions API (we use Gemini's)."""
+"""Backend for OpenAI-compatible Chat Completions APIs."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ class OpenAICompatClient:
         model: str,
         temperature: float = 0.0,
         timeout_s: float = 60,
-        http: httpx.Client | None = None,  # tests pass a fake client here
+        http: httpx.Client | None = None,
     ) -> None:
         self.model = model
         self.base_url = base_url
@@ -41,7 +41,7 @@ class OpenAICompatClient:
             resp = self.http.post(
                 f"{self.base_url}/chat/completions", json=body, headers=self.headers
             )
-        except httpx.HTTPError as exc:  # network error or timeout
+        except httpx.HTTPError as exc:
             raise LLMError(f"Request failed: {exc}") from exc
         latency_ms = int((time.perf_counter() - start) * 1000)
 
@@ -65,8 +65,7 @@ def _message_to_wire(m: Message) -> dict[str, Any]:
     if m.role == "tool":
         return {"role": "tool", "tool_call_id": m.tool_call_id, "content": m.content}
     if m.provider_message is not None:
-        # Echo the provider's message back untouched. Gemini attaches a "thought signature"
-        # to tool calls and rejects the next request (HTTP 400) if we drop it.
+        # Gemini rejects tool calls that lose their thought signature.
         return m.provider_message
     wire: dict[str, Any] = {"role": m.role, "content": m.content}
     if m.tool_calls:
@@ -74,7 +73,6 @@ def _message_to_wire(m: Message) -> dict[str, Any]:
             {
                 "id": c.id,
                 "type": "function",
-                # The OpenAI format sends arguments as a JSON *string*, not an object.
                 "function": {"name": c.name, "arguments": json.dumps(c.arguments)},
             }
             for c in m.tool_calls

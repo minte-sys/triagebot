@@ -1,5 +1,3 @@
-"""Backend tests with a fake HTTP server, so they run offline and cost nothing."""
-
 import json
 
 import httpx
@@ -56,7 +54,7 @@ def test_openai_compat_sends_tool_results_in_openai_shape() -> None:
 
 
 def test_openai_compat_echoes_provider_extras_back() -> None:
-    """Gemini adds extra fields (thought signatures) that must come back unchanged."""
+    """Provider-specific fields such as thought signatures must be preserved."""
     seen: list[httpx.Request] = []
     assistant = {"role": "assistant", "content": None, "tool_calls": [
         {"id": "abc", "type": "function", "extra": {"signature": "SIG123"},
@@ -68,7 +66,7 @@ def test_openai_compat_echoes_provider_extras_back() -> None:
     client.chat([Message("user", "hi"), first.to_message()])
 
     sent = json.loads(seen[1].content)["messages"]
-    assert sent[1] == assistant  # byte-for-byte what the provider gave us
+    assert sent[1] == assistant
 
 
 def test_openai_compat_raises_on_rate_limit() -> None:

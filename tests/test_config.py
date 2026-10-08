@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from triagebot.config import ConfigError, load_config
+from triagebot.llm import make_client
 
 TOML = """
 [llm]
@@ -16,6 +17,10 @@ api_key_env = "TEST_KEY"
 [llm.ollama]
 base_url = "http://localhost:11434"
 model = "qwen2.5:3b"
+
+[github]
+repo = "me/sandbox"
+allowed_repos = ["me/sandbox"]
 """
 
 
@@ -30,14 +35,15 @@ def test_reads_key_from_environment(config_file: Path, monkeypatch: pytest.Monke
     monkeypatch.setenv("TEST_KEY", "secret")
     cfg = load_config(config_file)
     assert cfg.llm.api_key == "secret"
-    assert cfg.llm.base_url == "https://example.test/v1"  # trailing slash removed
+    assert cfg.llm.base_url == "https://example.test/v1"
 
 
 def test_missing_key_is_a_clear_error(config_file: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("TEST_KEY", raising=False)
-    monkeypatch.chdir(config_file.parent)  # so a real .env elsewhere isn't picked up
+    monkeypatch.chdir(config_file.parent)
+    cfg = load_config(config_file)
     with pytest.raises(ConfigError, match="TEST_KEY"):
-        load_config(config_file)
+        make_client(cfg.llm)
 
 
 def test_backend_override_needs_no_key(config_file: Path) -> None:
@@ -49,3 +55,10 @@ def test_backend_override_needs_no_key(config_file: Path) -> None:
 def test_unknown_backend_rejected(config_file: Path) -> None:
     with pytest.raises(ConfigError, match="Unknown backend"):
         load_config(config_file, backend="gpt9000")
+
+
+def test_repo_must_be_in_allowlist(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(TOML.replace('allowed_repos = ["me/sandbox"]', 'allowed_repos = ["me/other"]'))
+    with pytest.raises(ConfigError, match="allowed_repos"):
+        load_config(path)

@@ -1,18 +1,19 @@
-# TriageBot configuration. No secrets in here: keys live in .env.
-
 [llm]
-# Which backend to use: "openai_compat" (hosted, e.g. Gemini) or "ollama" (local).
+# "openai_compat" or "ollama"
 backend = "openai_compat"
 temperature = 0.0
 timeout_s = 60
 
 [llm.openai_compat]
-# Gemini's OpenAI-compatible endpoint. Groq would also work here with its own base_url.
 base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
-# Check which models your free key can use at https://aistudio.google.com/rate-limit
 model = "gemini-3.8-flash"
 api_key_env = "GEMINI_API_KEY"
 
 [llm.ollama]
 base_url = "http://localhost:11434"
 model = "qwen2.5:3b"
+
+[github]
+repo = "minte-sys/triagebot-sandbox"
+allowed_repos = ["minte-sys/triagebot-sandbox"]
+token_env = "GITHUB_TOKEN"

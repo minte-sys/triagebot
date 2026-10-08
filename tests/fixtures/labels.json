@@ -1,0 +1,5 @@
+[
+  {"name": "bug", "description": "Something isn't working"},
+  {"name": "question", "description": null},
+  {"name": "duplicate", "description": "This issue or pull request already exists"}
+]

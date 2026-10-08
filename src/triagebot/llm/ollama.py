@@ -1,4 +1,4 @@
-"""Backend for a local model served by Ollama's native /api/chat endpoint."""
+"""Ollama backend using the native /api/chat endpoint."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ class OllamaClient:
         body: dict[str, Any] = {
             "model": self.model,
             "messages": [_message_to_wire(m) for m in messages],
-            "stream": False,  # one JSON reply instead of a stream of chunks
+            "stream": False,
             "options": {"temperature": self.temperature},
         }
         if tools:
@@ -64,7 +64,6 @@ def _message_to_wire(m: Message) -> dict[str, Any]:
         return {"role": "tool", "content": m.content, "tool_name": m.name}
     wire: dict[str, Any] = {"role": m.role, "content": m.content}
     if m.tool_calls:
-        # Ollama sends arguments as a JSON *object*, unlike the OpenAI format.
         wire["tool_calls"] = [
             {"function": {"name": c.name, "arguments": c.arguments}} for c in m.tool_calls
         ]
@@ -80,12 +79,12 @@ def _parse_response(data: dict[str, Any], latency_ms: int) -> LLMResponse:
     for i, c in enumerate(msg.get("tool_calls") or []):
         fn = c["function"]
         args = fn.get("arguments") or {}
-        if isinstance(args, str):  # be lenient: some models return a string anyway
+        if isinstance(args, str):  # some models return a string
             try:
                 args = json.loads(args)
             except json.JSONDecodeError as exc:
                 raise LLMError(f"Tool {fn['name']} got invalid JSON arguments: {exc}") from exc
-        # Ollama doesn't give calls an id, so we make one up to match results to calls.
+        # Ollama does not assign tool call ids.
         calls.append(ToolCall(id=f"call_{i}", name=fn["name"], arguments=args))
 
     return LLMResponse(
