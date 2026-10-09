@@ -74,6 +74,7 @@ def test_scores_are_positive_and_sorted(index: SearchIndex) -> None:
     assert scores == sorted(scores, reverse=True)
     assert all(s > 0 for s in scores)
 
+
 def test_state_filter(index: SearchIndex) -> None:
     assert [h.number for h in index.search_issues("typo", state="closed")] == [5]
     assert index.search_issues("typo", state="open") == []

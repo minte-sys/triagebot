@@ -6,7 +6,9 @@ import argparse
 import json
 import sys
 
-from triagebot.config import BACKENDS, Config, ConfigError, load_config
+from triagebot.agent.budget import Budget
+from triagebot.agent.loop import run_agent
+from triagebot.config import BACKENDS, TOOL_MODES, Config, ConfigError, load_config
 from triagebot.db import connect
 from triagebot.github import make_github
 from triagebot.github.client import GitHubError
@@ -17,6 +19,8 @@ from triagebot.search.keyword import SearchIndex
 from triagebot.tools.read_tools import build_read_tools
 from triagebot.tools.registry import ToolRegistry
 from triagebot.tools.search_tools import build_search_tools
+from triagebot.trace.recorder import Recorder
+from triagebot.trace.render import list_runs, render_run
 
 MULTIPLY = ToolSpec(
     name="multiply",
@@ -87,6 +91,47 @@ def cmd_index(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_run(args: argparse.Namespace) -> int:
+    """Triage one issue. Read-only: the decision is printed and stored, nothing is posted."""
+    cfg = load_config(args.config, backend=args.backend)
+    repo = cfg.github.repo
+    client = make_client(cfg.llm)
+    gh = make_github(cfg.github)
+    issue = gh.get_issue(repo, args.issue)
+    if issue.is_pull_request:
+        print(f"#{issue.number} is a pull request, not an issue")
+        return 1
+
+    conn = connect(cfg.search.db_path)
+    index = SearchIndex(conn, repo)
+    if index.issue_count() == 0:
+        print("Warning: the search index is empty. Run `triagebot index` first.")
+    get_issue = [t for t in build_read_tools(gh, repo) if t.name == "get_issue"]
+    registry = ToolRegistry(get_issue + build_search_tools(index, exclude_issue=issue.number))
+    budget = Budget(cfg.agent.max_steps, cfg.agent.max_seconds, cfg.agent.max_tokens)
+    mode = args.tool_mode or cfg.agent.tool_mode
+
+    print(f"Triaging #{issue.number} \"{issue.title}\" with {client.model} ({mode} tool calls)")
+    result = run_agent(client, registry, Recorder(conn, echo=print), repo, issue,
+                       gh.list_labels(repo), budget, mode)
+
+    print(f"\nRun {result.run_id}: {result.status}"
+          + (f" ({result.stop_reason})" if result.stop_reason else "")
+          + f", {result.steps} model calls, tokens in/out {result.tokens_in}/{result.tokens_out}")
+    if result.decision:
+        print(json.dumps(result.decision.model_dump(), indent=2, ensure_ascii=False))
+    print(f"Full trace: triagebot trace {result.run_id}")
+    return 0 if result.status == "finished" else 1
+
+
+def cmd_trace(args: argparse.Namespace) -> int:
+    """Show one run step by step, or list recent runs."""
+    cfg = load_config(args.config, backend=args.backend)
+    conn = connect(cfg.search.db_path)
+    print(render_run(conn, args.run_id) if args.run_id else list_runs(conn))
+    return 0
+
+
 def cmd_tools(args: argparse.Namespace) -> int:
     """Print each tool with the schema sent to the model."""
     for spec in _registry(args).specs():
@@ -126,6 +171,13 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("index", help="build the search index from GitHub issues and docs").set_defaults(
         func=cmd_index
     )
+    run = sub.add_parser("run", help="triage one issue (prints the decision, posts nothing)")
+    run.add_argument("issue", type=int, help="issue number")
+    run.add_argument("--tool-mode", choices=TOOL_MODES, help="override agent.tool_mode")
+    run.set_defaults(func=cmd_run)
+    trace = sub.add_parser("trace", help="show a run step by step, or list recent runs")
+    trace.add_argument("run_id", type=int, nargs="?")
+    trace.set_defaults(func=cmd_trace)
     tool = sub.add_parser("tool", help="run one tool, e.g. triagebot tool get_issue issue_number=1")
     tool.add_argument("name")
     tool.add_argument("args", nargs="*", help="key=value pairs")

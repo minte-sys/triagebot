@@ -69,3 +69,11 @@ def test_search_paths_are_relative_to_config(config_file: Path) -> None:
     cfg = load_config(config_file)
     assert cfg.search.db_path == config_file.parent / "data/triagebot.db"
     assert cfg.search.docs_dir == config_file.parent / "../sandbox/docs"
+
+
+def test_agent_defaults_and_tool_mode_validation(config_file: Path) -> None:
+    cfg = load_config(config_file)
+    assert (cfg.agent.max_steps, cfg.agent.tool_mode) == (8, "native")
+    config_file.write_text(TOML + '\n[agent]\ntool_mode = "telepathy"\n')
+    with pytest.raises(ConfigError, match="tool_mode"):
+        load_config(config_file)

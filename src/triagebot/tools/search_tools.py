@@ -36,7 +36,7 @@ def build_search_tools(index: SearchIndex, exclude_issue: int | None = None) -> 
             raise ToolError("The issue index is empty. Run `triagebot index` first.")
         hits = index.search_issues(args.query, args.limit, exclude_issue, args.state)
         return [asdict(h) for h in hits]
-    
+
     def search_docs(args: SearchDocsArgs) -> list[dict]:
         if index.doc_count() == 0:
             raise ToolError("No docs are indexed for this repository.")

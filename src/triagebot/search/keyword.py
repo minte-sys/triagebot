@@ -94,7 +94,9 @@ class SearchIndex:
         ).fetchone()
         return row[0]
 
-    def search_issues(self,text:str,limit:int =5, exclude: int |None=None, state: str="all")  -> list[IssueHit]:    
+    def search_issues(
+        self, text: str, limit: int = 5, exclude: int | None = None, state: str = "all"
+    ) -> list[IssueHit]:
         query = to_match_query(text)
         if not query:
             return []

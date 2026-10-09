@@ -2,7 +2,7 @@
 # "openai_compat" or "ollama"
 backend = "openai_compat"
 temperature = 0.0
-timeout_s = 60
+timeout_s = 120
 
 [llm.openai_compat]
 base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
@@ -22,3 +22,10 @@ token_env = "GITHUB_TOKEN"
 db_path = "data/triagebot.db"
 # Markdown docs to index; a local clone of the sandbox repo
 docs_dir = "../triagebot-sandbox/docs"
+
+[agent]
+max_steps = 8
+max_seconds = 300
+max_tokens = 40000
+# "native" uses the model's tool calling; "json" asks for tool calls as JSON text
+tool_mode = "native"

@@ -10,6 +10,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 BACKENDS = ("openai_compat", "ollama")
+TOOL_MODES = ("native", "json")
 
 
 class ConfigError(Exception):
@@ -43,10 +44,19 @@ class SearchConfig:
 
 
 @dataclass(frozen=True)
+class AgentConfig:
+    max_steps: int
+    max_seconds: float
+    max_tokens: int
+    tool_mode: str
+
+
+@dataclass(frozen=True)
 class Config:
     llm: LLMConfig
     github: GitHubConfig
     search: SearchConfig
+    agent: AgentConfig
 
 
 def load_config(path: str | Path = "config.toml", backend: str | None = None) -> Config:
@@ -61,6 +71,7 @@ def load_config(path: str | Path = "config.toml", backend: str | None = None) ->
         llm=_load_llm(data.get("llm", {}), backend),
         github=_load_github(data),
         search=_load_search(data.get("search", {}), path.parent),
+        agent=_load_agent(data.get("agent", {})),
     )
 
 
@@ -103,6 +114,18 @@ def _load_search(search: dict, base: Path) -> SearchConfig:
     return SearchConfig(
         db_path=base / search.get("db_path", "data/triagebot.db"),
         docs_dir=base / docs_dir if docs_dir else None,
+    )
+
+
+def _load_agent(agent: dict) -> AgentConfig:
+    mode = agent.get("tool_mode", "native")
+    if mode not in TOOL_MODES:
+        raise ConfigError(f"Unknown agent.tool_mode {mode!r}. Use one of: {', '.join(TOOL_MODES)}")
+    return AgentConfig(
+        max_steps=int(agent.get("max_steps", 8)),
+        max_seconds=float(agent.get("max_seconds", 180)),
+        max_tokens=int(agent.get("max_tokens", 40_000)),
+        tool_mode=mode,
     )
 
 
