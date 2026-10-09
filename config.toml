@@ -29,3 +29,7 @@ max_seconds = 300
 max_tokens = 40000
 # "native" uses the model's tool calling; "json" asks for tool calls as JSON text
 tool_mode = "native"
+
+[safety]
+# true: review shows what would happen but writes nothing to GitHub
+dry_run = true

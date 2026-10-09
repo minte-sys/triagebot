@@ -8,6 +8,9 @@ import sys
 
 from triagebot.agent.budget import Budget
 from triagebot.agent.loop import run_agent
+from triagebot.autonomy.executor import Executor
+from triagebot.autonomy.proposals import ProposalStore
+from triagebot.autonomy.review import describe, review
 from triagebot.config import BACKENDS, TOOL_MODES, Config, ConfigError, load_config
 from triagebot.db import connect
 from triagebot.github import make_github
@@ -92,7 +95,7 @@ def cmd_index(args: argparse.Namespace) -> int:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    """Triage one issue. Read-only: the decision is printed and stored, nothing is posted."""
+    """Triage one issue and store its decision as proposals. Nothing is posted here."""
     cfg = load_config(args.config, backend=args.backend)
     repo = cfg.github.repo
     client = make_client(cfg.llm)
@@ -118,10 +121,36 @@ def cmd_run(args: argparse.Namespace) -> int:
     print(f"\nRun {result.run_id}: {result.status}"
           + (f" ({result.stop_reason})" if result.stop_reason else "")
           + f", {result.steps} model calls, tokens in/out {result.tokens_in}/{result.tokens_out}")
-    if result.decision:
-        print(json.dumps(result.decision.model_dump(), indent=2, ensure_ascii=False))
     print(f"Full trace: triagebot trace {result.run_id}")
-    return 0 if result.status == "finished" else 1
+    if not result.decision:
+        return 1
+
+    proposals = ProposalStore(conn, repo).create_from_decision(
+        result.run_id, issue.number, result.decision, issue.labels
+    )
+    print(f"\nReasoning: {result.decision.reasoning}")
+    if not proposals:
+        print("No actions proposed.")
+    for p in proposals:
+        print(f"Proposal {p.id} ({p.action_type}): {describe(p, p.payload)}")
+    if proposals:
+        print("Review them with: triagebot review")
+    return 0
+
+
+def cmd_review(args: argparse.Namespace) -> int:
+    """Approve, edit or reject pending proposals. Writes to GitHub only if dry_run is off."""
+    cfg = load_config(args.config, backend=args.backend)
+    repo = cfg.github.repo
+    gh = make_github(cfg.github)
+    conn = connect(cfg.search.db_path)
+    labels = {lb.name for lb in gh.list_labels(repo)}
+    executor = Executor(gh, conn, repo, labels, dry_run=cfg.safety.dry_run)
+    try:
+        review(ProposalStore(conn, repo), executor)
+    except (EOFError, KeyboardInterrupt):
+        print("\nStopped. Decisions made so far are saved.")
+    return 0
 
 
 def cmd_trace(args: argparse.Namespace) -> int:
@@ -171,10 +200,13 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("index", help="build the search index from GitHub issues and docs").set_defaults(
         func=cmd_index
     )
-    run = sub.add_parser("run", help="triage one issue (prints the decision, posts nothing)")
+    run = sub.add_parser("run", help="triage one issue and create proposals (posts nothing)")
     run.add_argument("issue", type=int, help="issue number")
     run.add_argument("--tool-mode", choices=TOOL_MODES, help="override agent.tool_mode")
     run.set_defaults(func=cmd_run)
+    sub.add_parser("review", help="approve, edit or reject pending proposals").set_defaults(
+        func=cmd_review
+    )
     trace = sub.add_parser("trace", help="show a run step by step, or list recent runs")
     trace.add_argument("run_id", type=int, nargs="?")
     trace.set_defaults(func=cmd_trace)

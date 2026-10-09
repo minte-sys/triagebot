@@ -44,6 +44,28 @@ CREATE TABLE IF NOT EXISTS trace_events (
     latency_ms INTEGER,
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS proposals (
+    id INTEGER PRIMARY KEY,
+    run_id INTEGER NOT NULL REFERENCES runs(id),
+    repo TEXT NOT NULL,
+    issue_number INTEGER NOT NULL,
+    action_type TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    rationale TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',
+    final_payload_json TEXT,
+    reject_reason TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    decided_at TEXT
+);
+CREATE TABLE IF NOT EXISTS executed_actions (
+    id INTEGER PRIMARY KEY,
+    proposal_id INTEGER NOT NULL REFERENCES proposals(id),
+    dry_run INTEGER NOT NULL,
+    description TEXT NOT NULL,
+    github_ref_json TEXT,
+    executed_at TEXT NOT NULL
+);
 """
 
 

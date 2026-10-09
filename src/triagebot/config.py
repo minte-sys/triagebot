@@ -52,11 +52,17 @@ class AgentConfig:
 
 
 @dataclass(frozen=True)
+class SafetyConfig:
+    dry_run: bool
+
+
+@dataclass(frozen=True)
 class Config:
     llm: LLMConfig
     github: GitHubConfig
     search: SearchConfig
     agent: AgentConfig
+    safety: SafetyConfig
 
 
 def load_config(path: str | Path = "config.toml", backend: str | None = None) -> Config:
@@ -72,6 +78,7 @@ def load_config(path: str | Path = "config.toml", backend: str | None = None) ->
         github=_load_github(data),
         search=_load_search(data.get("search", {}), path.parent),
         agent=_load_agent(data.get("agent", {})),
+        safety=SafetyConfig(dry_run=bool(data.get("safety", {}).get("dry_run", True))),
     )
 
 

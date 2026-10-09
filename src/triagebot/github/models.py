@@ -20,10 +20,15 @@ class Label:
 class Comment:
     author: str
     body: str
+    id: int = 0
 
     @classmethod
     def from_api(cls, d: dict[str, Any]) -> Comment:
-        return cls(author=(d.get("user") or {}).get("login", "ghost"), body=d.get("body") or "")
+        return cls(
+            author=(d.get("user") or {}).get("login", "ghost"),
+            body=d.get("body") or "",
+            id=d.get("id", 0),
+        )
 
 
 @dataclass

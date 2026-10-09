@@ -34,6 +34,11 @@ class FakeGitHub:
     def handler(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         path = request.url.path
+        if request.method == "POST":
+            body = json.loads(request.content)
+            if path.endswith("/labels"):
+                return httpx.Response(200, json=[{"name": n} for n in body["labels"]])
+            return httpx.Response(201, json={"id": 99, "body": body["body"], "user": {"login": "bot"}})
         if path == f"/repos/{REPO}/issues":
             if request.url.params.get("page") == "2":
                 return httpx.Response(200, json=load("issues_page2.json"))

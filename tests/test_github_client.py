@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from conftest import REPO, FakeGitHub
 
@@ -40,3 +42,14 @@ def test_list_issues_requests_all_states(gh: GitHubClient, fake: FakeGitHub) -> 
     issues = gh.list_issues(REPO)
     assert fake.requests[0].url.params["state"] == "all"
     assert [i.number for i in issues] == [3, 1]
+
+
+def test_write_calls_send_json_and_respect_allowlist(gh: GitHubClient, fake: FakeGitHub) -> None:
+    assert gh.add_labels(REPO, 3, ["bug"]) == ["bug"]
+    comment = gh.create_comment(REPO, 3, "hello")
+    assert comment.id == 99
+    post = fake.requests[-1]
+    assert post.method == "POST" and json.loads(post.content) == {"body": "hello"}
+    with pytest.raises(RepoNotAllowed):
+        gh.create_comment("someone/else", 1, "hi")
+    assert len(fake.requests) == 2

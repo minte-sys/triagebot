@@ -1,4 +1,4 @@
-"""Read-only GitHub REST client restricted to an allowlist of repositories."""
+"""GitHub REST client restricted to an allowlist of repositories."""
 
 from __future__ import annotations
 
@@ -51,7 +51,7 @@ class GitHubClient:
 
     def get_issue(self, repo: str, number: int, max_comments: int = 10) -> Issue:
         issue = Issue.from_api(self._get(f"/repos/{repo}/issues/{number}", repo=repo))
-        if issue.comment_count:
+        if issue.comment_count and max_comments:
             raw = self._get(
                 f"/repos/{repo}/issues/{number}/comments", {"per_page": max_comments}, repo
             )
@@ -61,6 +61,19 @@ class GitHubClient:
     def list_labels(self, repo: str) -> list[Label]:
         return [Label.from_api(d) for d in self._paginate(f"/repos/{repo}/labels", {}, repo)]
 
+    def list_comments(self, repo: str, number: int) -> list[Comment]:
+        items = self._paginate(f"/repos/{repo}/issues/{number}/comments", {}, repo)
+        return [Comment.from_api(c) for c in items]
+
+    def add_labels(self, repo: str, number: int, labels: list[str]) -> list[str]:
+        """Add labels to an issue. Returns all labels the issue has afterwards."""
+        data = self._post(f"/repos/{repo}/issues/{number}/labels", {"labels": labels}, repo)
+        return [lbl["name"] for lbl in data]
+
+    def create_comment(self, repo: str, number: int, body: str) -> Comment:
+        data = self._post(f"/repos/{repo}/issues/{number}/comments", {"body": body}, repo)
+        return Comment.from_api(data)
+
     def _check_repo(self, repo: str) -> None:
         if repo not in self.allowed_repos:
             raise RepoNotAllowed(f"Repository {repo!r} is not in the allowlist")
@@ -68,6 +81,10 @@ class GitHubClient:
     def _get(self, path: str, params: dict[str, Any] | None = None, repo: str = "") -> Any:
         self._check_repo(repo)
         return self._request(f"{self.base_url}{path}", params).json()
+
+    def _post(self, path: str, body: dict[str, Any], repo: str) -> Any:
+        self._check_repo(repo)
+        return self._request(f"{self.base_url}{path}", None, method="POST", body=body).json()
 
     def _paginate(
         self, path: str, params: dict[str, Any], repo: str, max_pages: int = 5
@@ -86,9 +103,15 @@ class GitHubClient:
             query = None  # next URL already has the query
         return results
 
-    def _request(self, url: str, params: dict[str, Any] | None) -> httpx.Response:
+    def _request(
+        self,
+        url: str,
+        params: dict[str, Any] | None,
+        method: str = "GET",
+        body: dict[str, Any] | None = None,
+    ) -> httpx.Response:
         try:
-            resp = self.http.get(url, params=params, headers=self.headers)
+            resp = self.http.request(method, url, params=params, json=body, headers=self.headers)
         except httpx.HTTPError as exc:
             raise GitHubError(f"Request to GitHub failed: {exc}") from exc
         if resp.status_code >= 400:
