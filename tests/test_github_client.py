@@ -34,3 +34,9 @@ def test_http_errors_keep_status_code(gh: GitHubClient) -> None:
         gh.get_issue(REPO, 404)
     assert err.value.status_code == 404
     assert "Not Found" in str(err.value)
+
+
+def test_list_issues_requests_all_states(gh: GitHubClient, fake: FakeGitHub) -> None:
+    issues = gh.list_issues(REPO)
+    assert fake.requests[0].url.params["state"] == "all"
+    assert [i.number for i in issues] == [3, 1]

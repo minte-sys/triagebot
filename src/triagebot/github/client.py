@@ -41,7 +41,11 @@ class GitHubClient:
 
     def list_open_issues(self, repo: str, limit: int = 30) -> list[Issue]:
         """Open issues, newest first, excluding pull requests."""
-        items = self._paginate(f"/repos/{repo}/issues", {"state": "open", "sort": "created"}, repo)
+        return self.list_issues(repo, state="open", limit=limit)
+
+    def list_issues(self, repo: str, state: str = "all", limit: int = 500) -> list[Issue]:
+        """Issues in the given state ("open", "closed" or "all"), newest first, no pull requests."""
+        items = self._paginate(f"/repos/{repo}/issues", {"state": state, "sort": "created"}, repo)
         issues = [Issue.from_api(d) for d in items]
         return [i for i in issues if not i.is_pull_request][:limit]
 

@@ -17,3 +17,8 @@ model = "qwen2.5:3b"
 repo = "minte-sys/triagebot-sandbox"
 allowed_repos = ["minte-sys/triagebot-sandbox"]
 token_env = "GITHUB_TOKEN"
+
+[search]
+db_path = "data/triagebot.db"
+# Markdown docs to index; a local clone of the sandbox repo
+docs_dir = "../triagebot-sandbox/docs"

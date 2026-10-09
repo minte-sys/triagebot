@@ -6,12 +6,17 @@ import argparse
 import json
 import sys
 
-from triagebot.config import BACKENDS, ConfigError, load_config
+from triagebot.config import BACKENDS, Config, ConfigError, load_config
+from triagebot.db import connect
 from triagebot.github import make_github
+from triagebot.github.client import GitHubError
 from triagebot.llm import make_client
 from triagebot.llm.base import LLMError, Message, ToolSpec
+from triagebot.search.docs import load_docs
+from triagebot.search.keyword import SearchIndex
 from triagebot.tools.read_tools import build_read_tools
 from triagebot.tools.registry import ToolRegistry
+from triagebot.tools.search_tools import build_search_tools
 
 MULTIPLY = ToolSpec(
     name="multiply",
@@ -54,9 +59,32 @@ def cmd_ping(args: argparse.Namespace) -> int:
     return 0
 
 
+def _index(cfg: Config) -> SearchIndex:
+    return SearchIndex(connect(cfg.search.db_path), cfg.github.repo)
+
+
 def _registry(args: argparse.Namespace) -> ToolRegistry:
     cfg = load_config(args.config, backend=args.backend)
-    return ToolRegistry(build_read_tools(make_github(cfg.github), cfg.github.repo))
+    tools = build_read_tools(make_github(cfg.github), cfg.github.repo)
+    return ToolRegistry(tools + build_search_tools(_index(cfg)))
+
+
+def cmd_index(args: argparse.Namespace) -> int:
+    """Fetch all issues and read the docs folder into the search index."""
+    cfg = load_config(args.config, backend=args.backend)
+    index = _index(cfg)
+    issues = make_github(cfg.github).list_issues(cfg.github.repo, state="all")
+    print(f"Indexed {index.index_issues(issues)} issues from {cfg.github.repo}")
+
+    docs_dir = cfg.search.docs_dir
+    if docs_dir is None:
+        print("No search.docs_dir in config; skipping docs")
+    elif not docs_dir.is_dir():
+        print(f"Docs folder not found: {docs_dir.resolve()}; skipping docs")
+    else:
+        print(f"Indexed {index.index_docs(load_docs(docs_dir))} doc sections from {docs_dir}")
+    print(f"Database: {cfg.search.db_path}")
+    return 0
 
 
 def cmd_tools(args: argparse.Namespace) -> int:
@@ -95,6 +123,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("tools", help="list the tools and their argument schemas").set_defaults(
         func=cmd_tools
     )
+    sub.add_parser("index", help="build the search index from GitHub issues and docs").set_defaults(
+        func=cmd_index
+    )
     tool = sub.add_parser("tool", help="run one tool, e.g. triagebot tool get_issue issue_number=1")
     tool.add_argument("name")
     tool.add_argument("args", nargs="*", help="key=value pairs")
@@ -106,7 +137,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)
-    except (ConfigError, LLMError) as exc:
+    except (ConfigError, LLMError, GitHubError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 2
 

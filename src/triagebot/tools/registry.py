@@ -13,6 +13,10 @@ from triagebot.github.client import GitHubError
 from triagebot.llm.base import ToolSpec
 
 
+class ToolError(Exception):
+    """A tool could not run; the message is shown to the model."""
+
+
 @dataclass
 class Tool:
     name: str
@@ -50,7 +54,7 @@ class ToolRegistry:
             return ToolResult(f"Invalid arguments for {name}: {problems}", True)
         try:
             output = tool.func(validated)
-        except GitHubError as exc:
+        except (GitHubError, ToolError) as exc:
             return ToolResult(f"{name} failed: {exc}", True)
         return ToolResult(json.dumps(output, ensure_ascii=False))
 

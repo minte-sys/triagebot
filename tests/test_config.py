@@ -62,3 +62,10 @@ def test_repo_must_be_in_allowlist(tmp_path: Path) -> None:
     path.write_text(TOML.replace('allowed_repos = ["me/sandbox"]', 'allowed_repos = ["me/other"]'))
     with pytest.raises(ConfigError, match="allowed_repos"):
         load_config(path)
+
+
+def test_search_paths_are_relative_to_config(config_file: Path) -> None:
+    config_file.write_text(TOML + '\n[search]\ndocs_dir = "../sandbox/docs"\n')
+    cfg = load_config(config_file)
+    assert cfg.search.db_path == config_file.parent / "data/triagebot.db"
+    assert cfg.search.docs_dir == config_file.parent / "../sandbox/docs"

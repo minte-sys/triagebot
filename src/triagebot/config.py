@@ -37,9 +37,16 @@ class GitHubConfig:
 
 
 @dataclass(frozen=True)
+class SearchConfig:
+    db_path: Path
+    docs_dir: Path | None
+
+
+@dataclass(frozen=True)
 class Config:
     llm: LLMConfig
     github: GitHubConfig
+    search: SearchConfig
 
 
 def load_config(path: str | Path = "config.toml", backend: str | None = None) -> Config:
@@ -50,7 +57,11 @@ def load_config(path: str | Path = "config.toml", backend: str | None = None) ->
 
     load_dotenv()
     data = tomllib.loads(path.read_text(encoding="utf-8"))
-    return Config(llm=_load_llm(data.get("llm", {}), backend), github=_load_github(data))
+    return Config(
+        llm=_load_llm(data.get("llm", {}), backend),
+        github=_load_github(data),
+        search=_load_search(data.get("search", {}), path.parent),
+    )
 
 
 def _load_llm(llm: dict, backend: str | None) -> LLMConfig:
@@ -83,6 +94,15 @@ def _load_github(data: dict) -> GitHubConfig:
         base_url=gh.get("base_url", "https://api.github.com").rstrip("/"),
         token_env=token_env,
         token=os.environ.get(token_env) or None,
+    )
+
+
+def _load_search(search: dict, base: Path) -> SearchConfig:
+    """Relative paths are resolved against the folder containing config.toml."""
+    docs_dir = search.get("docs_dir")
+    return SearchConfig(
+        db_path=base / search.get("db_path", "data/triagebot.db"),
+        docs_dir=base / docs_dir if docs_dir else None,
     )
 
 
