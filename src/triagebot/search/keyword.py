@@ -94,15 +94,16 @@ class SearchIndex:
         ).fetchone()
         return row[0]
 
-    def search_issues(self, text: str, limit: int = 5, exclude: int | None = None) -> list[IssueHit]:
+    def search_issues(self,text:str,limit:int =5, exclude: int |None=None, state: str="all")  -> list[IssueHit]:    
         query = to_match_query(text)
         if not query:
             return []
         rows = self.conn.execute(
             "SELECT number, title, state, labels, bm25(issues_fts, ?, 1.0) AS bm, "
             "snippet(issues_fts, -1, '[', ']', '...', 12) AS snip "
-            "FROM issues_fts WHERE issues_fts MATCH ? AND repo = ? ORDER BY bm LIMIT ?",
-            (TITLE_WEIGHT, query, self.repo, limit + 1),
+            "FROM issues_fts WHERE issues_fts MATCH ? AND repo = ? AND (? = 'all' OR state = ?) "
+            "ORDER BY bm LIMIT ?",
+            (TITLE_WEIGHT, query, self.repo, state, state, limit + 1),
         ).fetchall()
         hits = [
             IssueHit(

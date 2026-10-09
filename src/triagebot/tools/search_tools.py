@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -17,6 +18,9 @@ class SearchIssuesArgs(BaseModel):
         min_length=3, max_length=500, description="Words describing the problem, e.g. the issue title"
     )
     limit: int = Field(default=5, ge=1, le=10, description="How many results to return")
+    state: Literal["open", "closed", "all"] = Field(
+        default="all", description="Only open issues, only closed issues, or both"
+    )
 
 
 class SearchDocsArgs(BaseModel):
@@ -30,8 +34,9 @@ def build_search_tools(index: SearchIndex, exclude_issue: int | None = None) -> 
     def search_similar_issues(args: SearchIssuesArgs) -> list[dict]:
         if index.issue_count() == 0:
             raise ToolError("The issue index is empty. Run `triagebot index` first.")
-        return [asdict(h) for h in index.search_issues(args.query, args.limit, exclude_issue)]
-
+        hits = index.search_issues(args.query, args.limit, exclude_issue, args.state)
+        return [asdict(h) for h in hits]
+    
     def search_docs(args: SearchDocsArgs) -> list[dict]:
         if index.doc_count() == 0:
             raise ToolError("No docs are indexed for this repository.")
