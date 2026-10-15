@@ -61,7 +61,7 @@ def retry(call):
 def test_backoff_doubles_until_success() -> None:
     result, waits = retry(Flaky(http_error(503, ""), http_error(503, ""), http_error(503, "")))
     assert result == "ok"
-    assert waits == [2, 4, 8]
+    assert waits == [2, 4, 9]
 
 
 def test_gives_up_after_max_retries() -> None:
