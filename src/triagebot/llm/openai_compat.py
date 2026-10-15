@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 
 from triagebot.llm.base import LLMError, LLMResponse, Message, ToolCall, ToolSpec, Usage
+from triagebot.llm.retry import http_error
 
 
 class OpenAICompatClient:
@@ -42,11 +43,11 @@ class OpenAICompatClient:
                 f"{self.base_url}/chat/completions", json=body, headers=self.headers
             )
         except httpx.HTTPError as exc:
-            raise LLMError(f"Request failed: {exc}") from exc
+            raise LLMError(f"Request failed: {exc!r}", retryable=True) from exc
         latency_ms = int((time.perf_counter() - start) * 1000)
 
         if resp.status_code >= 400:
-            raise LLMError(f"HTTP {resp.status_code}: {resp.text[:300]}", resp.status_code)
+            raise http_error(resp.status_code, resp.text, dict(resp.headers))
         return _parse_response(resp.json(), latency_ms)
 
 

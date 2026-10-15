@@ -95,3 +95,14 @@ def test_trust_defaults_and_validation(config_file: Path) -> None:
     config_file.write_text(TOML + "\n[trust]\naudit_every = 0\n")
     with pytest.raises(ConfigError, match="audit_every"):
         load_config(config_file)
+
+
+def test_retry_fallback_and_search_settings(config_file: Path) -> None:
+    cfg = load_config(config_file)
+    assert (cfg.llm.fallback_models, cfg.llm.max_retries, cfg.search.issue_search) == (
+        (), 3, "bm25")
+    config_file.write_text(TOML.replace('api_key_env = "TEST_KEY"',
+                                        'api_key_env = "TEST_KEY"\nfallback_models = ["b"]')
+                           + '\n[search]\nissue_search = "telepathy"\n')
+    with pytest.raises(ConfigError, match="issue_search"):
+        load_config(config_file)

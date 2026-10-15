@@ -30,6 +30,7 @@ class RunResult:
     steps: int
     tokens_in: int
     tokens_out: int
+    model_unavailable: bool = False  # the model was overloaded or out of quota
 
 
 def run_agent(
@@ -59,10 +60,12 @@ def run_agent(
     started = clock()
     steps = tokens_in = tokens_out = 0
 
-    def end(status: str, reason: str, decision: Decision | None = None) -> RunResult:
+    def end(status: str, reason: str, decision: Decision | None = None,
+            unavailable: bool = False) -> RunResult:
         recorder.end_run(run_id, status, reason, steps, tokens_in, tokens_out,
                          decision.model_dump() if decision else None)
-        return RunResult(run_id, status, reason, decision, steps, tokens_in, tokens_out)
+        return RunResult(run_id, status, reason, decision, steps, tokens_in, tokens_out,
+                         unavailable)
 
     while True:
         reason = budget.exceeded(steps, clock() - started, tokens_in + tokens_out)
@@ -73,7 +76,7 @@ def run_agent(
             resp = client.chat(messages, tools=specs if tool_mode == "native" else None)
         except LLMError as exc:
             recorder.event(run_id, "error", "llm", result=str(exc), is_error=True)
-            return end("error", str(exc))
+            return end("error", str(exc), unavailable=exc.model_unavailable)
         steps += 1
         tokens_in += resp.usage.input_tokens
         tokens_out += resp.usage.output_tokens

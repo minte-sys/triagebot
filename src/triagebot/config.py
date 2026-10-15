@@ -26,6 +26,9 @@ class LLMConfig:
     api_key: str | None
     temperature: float
     timeout_s: float
+    fallback_models: tuple[str, ...] = ()
+    max_retries: int = 3
+    retry_max_wait_s: float = 60
 
 
 @dataclass(frozen=True)
@@ -50,10 +53,14 @@ class GitHubConfig:
     token: str | None
 
 
+ISSUE_SEARCH = ("bm25", "embeddings")
+
+
 @dataclass(frozen=True)
 class SearchConfig:
     db_path: Path
     docs_dir: Path | None
+    issue_search: str = "bm25"
 
 
 @dataclass(frozen=True)
@@ -126,6 +133,9 @@ def _load_llm(llm: dict, backend: str | None) -> LLMConfig:
         api_key=os.environ.get(key_env) if key_env else None,
         temperature=float(llm.get("temperature", 0.0)),
         timeout_s=float(llm.get("timeout_s", 60)),
+        fallback_models=tuple(section.get("fallback_models", [])),
+        max_retries=int(llm.get("max_retries", 3)),
+        retry_max_wait_s=float(llm.get("retry_max_wait_s", 60)),
     )
 
 
@@ -169,9 +179,15 @@ def _load_github(data: dict) -> GitHubConfig:
 def _load_search(search: dict, base: Path) -> SearchConfig:
     """Relative paths are resolved against the folder containing config.toml."""
     docs_dir = search.get("docs_dir")
+    issue_search = search.get("issue_search", "bm25")
+    if issue_search not in ISSUE_SEARCH:
+        raise ConfigError(
+            f"Unknown search.issue_search {issue_search!r}. Use one of: {', '.join(ISSUE_SEARCH)}"
+        )
     return SearchConfig(
         db_path=base / search.get("db_path", "data/triagebot.db"),
         docs_dir=base / docs_dir if docs_dir else None,
+        issue_search=issue_search,
     )
 
 

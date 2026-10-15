@@ -3,11 +3,17 @@
 backend = "openai_compat"
 temperature = 0.0
 timeout_s = 120
+# retry overloaded (503), rate-limited (429) and timed-out calls, waiting about 2, 4, 8 s
+max_retries = 3
+# if the provider asks us to wait longer than this, give up (and try a fallback model)
+retry_max_wait_s = 60
 
 [llm.openai_compat]
 base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
 model = "gemini-3.5-flash"
 api_key_env = "GEMINI_API_KEY"
+# tried in order when the model above is overloaded or out of quota
+fallback_models = ["gemini-3.8-flash"]
 
 [llm.ollama]
 base_url = "http://localhost:11434"
@@ -22,6 +28,9 @@ token_env = "GITHUB_TOKEN"
 db_path = "data/triagebot.db"
 # Markdown docs to index; a local clone of the sandbox repo
 docs_dir = "../triagebot-sandbox/docs"
+# how search_similar_issues finds duplicates: "embeddings" (by meaning, keywords as fallback)
+# or "bm25" (keywords only)
+issue_search = "embeddings"
 
 [agent]
 max_steps = 8

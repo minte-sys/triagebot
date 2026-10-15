@@ -8,6 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from triagebot.search.keyword import SearchIndex
+from triagebot.search.semantic import SemanticIssueSearch
 from triagebot.tools.registry import Tool, ToolError
 
 MAX_DOC_CHARS = 800
@@ -28,14 +29,21 @@ class SearchDocsArgs(BaseModel):
     limit: int = Field(default=3, ge=1, le=10, description="How many sections to return")
 
 
-def build_search_tools(index: SearchIndex, exclude_issue: int | None = None) -> list[Tool]:
-    """exclude_issue keeps the issue being triaged out of its own duplicate search."""
+def build_search_tools(
+    index: SearchIndex, exclude_issue: int | None = None,
+    semantic: SemanticIssueSearch | None = None,
+) -> list[Tool]:
+    """exclude_issue keeps the issue being triaged out of its own duplicate search.
+    With `semantic`, similar issues are found by meaning, with keyword search as fallback."""
 
     def search_similar_issues(args: SearchIssuesArgs) -> list[dict]:
         if index.issue_count() == 0:
             raise ToolError("The issue index is empty. Run `triagebot index` first.")
-        hits = index.search_issues(args.query, args.limit, exclude_issue, args.state)
-        return [asdict(h) for h in hits]
+        if semantic is None:
+            hits = index.search_issues(args.query, args.limit, exclude_issue, args.state)
+            return [asdict(h) for h in hits]
+        hits, method = semantic.search(args.query, args.limit, exclude_issue, args.state)
+        return [{**asdict(h), "matched_by": method} for h in hits]
 
     def search_docs(args: SearchDocsArgs) -> list[dict]:
         if index.doc_count() == 0:
@@ -48,8 +56,9 @@ def build_search_tools(index: SearchIndex, exclude_issue: int | None = None) -> 
 
     return [
         Tool("search_similar_issues",
-             "Keyword search (BM25) over past open and closed issues. Higher score = more similar. "
-             "Use it to find possible duplicates.",
+             ("Search past open and closed issues by meaning. Higher score = more similar. "
+              if semantic else "Keyword search (BM25) over past open and closed issues. "
+              "Higher score = more similar. ") + "Use it to find possible duplicates.",
              SearchIssuesArgs, search_similar_issues),
         Tool("search_docs",
              "Keyword search (BM25) over the repository's documentation, one result per section.",

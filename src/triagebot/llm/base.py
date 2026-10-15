@@ -54,12 +54,27 @@ class LLMResponse:
         )
 
 
-class LLMError(Exception):
-    """HTTP error, timeout, or unparseable response from a model."""
+UNAVAILABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
 
-    def __init__(self, message: str, status_code: int | None = None) -> None:
+
+class LLMError(Exception):
+    """HTTP error, timeout, or unparseable response from a model.
+
+    retryable: waiting a little and trying again may work (overload, per-minute limit,
+    timeout). retry_after: how long the provider asked us to wait, if it said.
+    """
+
+    def __init__(self, message: str, status_code: int | None = None, retryable: bool = False,
+                 retry_after: float | None = None) -> None:
         super().__init__(message)
         self.status_code = status_code
+        self.retryable = retryable
+        self.retry_after = retry_after
+
+    @property
+    def model_unavailable(self) -> bool:
+        """The model can't serve us right now, so another model might."""
+        return self.retryable or self.status_code in UNAVAILABLE_STATUSES
 
 
 class LLMClient(Protocol):

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from triagebot.agent.budget import Budget
@@ -26,10 +27,12 @@ from triagebot.eval.search_eval import compare_search, format_search_report
 from triagebot.github import make_github
 from triagebot.github.client import GitHubError
 from triagebot.llm import make_client
-from triagebot.llm.base import LLMError, Message, ToolSpec
+from triagebot.llm.base import LLMClient, LLMError, Message, ToolSpec
+from triagebot.llm.retry import RetryingClient, RetryPolicy
 from triagebot.search.docs import load_docs
-from triagebot.search.embeddings import CachedEmbedder, make_embedder
+from triagebot.search.embeddings import CachedEmbedder, RetryingEmbedder, make_embedder
 from triagebot.search.keyword import SearchIndex
+from triagebot.search.semantic import SemanticIssueSearch, issue_text
 from triagebot.tools.read_tools import build_read_tools
 from triagebot.tools.registry import ToolRegistry
 from triagebot.tools.search_tools import build_search_tools
@@ -77,6 +80,28 @@ def cmd_ping(args: argparse.Namespace) -> int:
     return 0
 
 
+def _policy(cfg: Config) -> RetryPolicy:
+    return RetryPolicy(cfg.llm.max_retries, max_wait_s=cfg.llm.retry_max_wait_s)
+
+
+def _client(cfg: Config, model: str | None = None) -> LLMClient:
+    llm = replace(cfg.llm, model=model) if model else cfg.llm
+    return RetryingClient(make_client(llm), _policy(cfg), say=print)
+
+
+def _embedder(cfg: Config, conn) -> CachedEmbedder:
+    if cfg.embeddings is None:
+        raise ConfigError("No base_url for the embeddings backend in the [llm] section")
+    return CachedEmbedder(RetryingEmbedder(make_embedder(cfg.embeddings), _policy(cfg), print),
+                          conn)
+
+
+def _semantic(cfg: Config, index: SearchIndex) -> SemanticIssueSearch | None:
+    if cfg.search.issue_search != "embeddings":
+        return None
+    return SemanticIssueSearch(index, _embedder(cfg, index.conn))
+
+
 def _index(cfg: Config) -> SearchIndex:
     return SearchIndex(connect(cfg.search.db_path), cfg.github.repo)
 
@@ -93,6 +118,15 @@ def cmd_index(args: argparse.Namespace) -> int:
     index = _index(cfg)
     issues = make_github(cfg.github).list_issues(cfg.github.repo, state="all")
     print(f"Indexed {index.index_issues(issues)} issues from {cfg.github.repo}")
+    semantic = _semantic(cfg, index)
+    if semantic:
+        embedder = semantic.embedder
+        try:
+            embedder.embed([issue_text(i.title, i.body) for i in issues])
+            print(f"Embedded the issues with {embedder.model}: {embedder.new} new, "
+                  f"{embedder.cached} from cache")
+        except LLMError as exc:
+            print(f"Could not embed the issues ({exc}). Search falls back to keywords for now.")
 
     docs_dir = cfg.search.docs_dir
     if docs_dir is None:
@@ -109,7 +143,6 @@ def cmd_run(args: argparse.Namespace) -> int:
     """Triage one issue and store its decision as proposals. Nothing is posted here."""
     cfg = load_config(args.config, backend=args.backend)
     repo = cfg.github.repo
-    client = make_client(cfg.llm)
     gh = make_github(cfg.github)
     issue = gh.get_issue(repo, args.issue)
     if issue.is_pull_request:
@@ -121,23 +154,31 @@ def cmd_run(args: argparse.Namespace) -> int:
     if index.issue_count() == 0:
         print("Warning: the search index is empty. Run `triagebot index` first.")
     get_issue = [t for t in build_read_tools(gh, repo) if t.name == "get_issue"]
-    registry = ToolRegistry(get_issue + build_search_tools(index, exclude_issue=issue.number))
+    semantic = _semantic(cfg, index)
+    registry = ToolRegistry(get_issue + build_search_tools(index, issue.number, semantic))
     budget = Budget(cfg.agent.max_steps, cfg.agent.max_seconds, cfg.agent.max_tokens)
     mode = args.tool_mode or cfg.agent.tool_mode
     labels = gh.list_labels(repo)
     past = CorrectionStore(conn, repo).recent()
 
-    print(f"Triaging #{issue.number} \"{issue.title}\" with {client.model} ({mode} tool calls)")
     if past:
         print(f"Including {len(past)} past corrections in the prompt")
-    result = run_agent(client, registry, Recorder(conn, echo=print), repo, issue,
-                       labels, budget, mode, corrections=format_corrections(past),
-                       prompt_version=cfg.agent.prompt_version)
-
-    print(f"\nRun {result.run_id}: {result.status}"
-          + (f" ({result.stop_reason})" if result.stop_reason else "")
-          + f", {result.steps} model calls, tokens in/out {result.tokens_in}/{result.tokens_out}")
-    print(f"Full trace: triagebot trace {result.run_id}")
+    models = [cfg.llm.model, *cfg.llm.fallback_models]
+    for n, model in enumerate(models):
+        print(f"Triaging #{issue.number} \"{issue.title}\" with {model} ({mode} tool calls)")
+        result = run_agent(_client(cfg, model), registry, Recorder(conn, echo=print), repo,
+                           issue, labels, budget, mode, corrections=format_corrections(past),
+                           prompt_version=cfg.agent.prompt_version)
+        print(f"\nRun {result.run_id}: {result.status}"
+              + (f" ({result.stop_reason})" if result.stop_reason else "")
+              + f", {result.steps} model calls, tokens in/out "
+              f"{result.tokens_in}/{result.tokens_out}")
+        print(f"Full trace: triagebot trace {result.run_id}")
+        if not (result.model_unavailable and n + 1 < len(models)):
+            break
+        print(f"\n{model} is unavailable. Starting again with the fallback model {models[n + 1]}.")
+    if semantic and semantic.last_error:
+        print(f"Note: embeddings failed, so issue search used keywords ({semantic.last_error[:100]})")
     if not result.decision:
         return 1
 
@@ -244,7 +285,7 @@ def cmd_eval(args: argparse.Namespace) -> int:
         print(f"Deleted {store.clear(setup)} earlier results for {setup}")
     if not args.report:
         budget = Budget(cfg.agent.max_steps, cfg.agent.max_seconds, cfg.agent.max_tokens)
-        run_eval(make_client(cfg.llm), ds, store, Recorder(conn), setup, budget,
+        run_eval(_client(cfg), ds, store, Recorder(conn), setup, budget,
                  args.limit, args.pause)
         print()
     print(format_report(ds, store.outcomes(ds.cases), setup))
@@ -254,10 +295,8 @@ def cmd_eval(args: argparse.Namespace) -> int:
 def cmd_eval_search(args: argparse.Namespace) -> int:
     """Compare BM25, embeddings and both combined at finding the eval set's duplicates."""
     cfg = load_config(args.config, backend=args.backend)
-    if cfg.embeddings is None:
-        raise ConfigError("No base_url for the embeddings backend in the [llm] section")
     ds = load_dataset(Path(args.config).parent / args.data)
-    embedder = CachedEmbedder(make_embedder(cfg.embeddings), connect(cfg.search.db_path))
+    embedder = _embedder(cfg, connect(cfg.search.db_path))
     groups = compare_search(ds, embedder)
     print(f"Embeddings from {embedder.model}: {embedder.new} new, {embedder.cached} from cache\n")
     print(format_search_report(groups, args.details))

@@ -121,6 +121,12 @@ class SearchIndex:
         ]
         return hits[:limit]
 
+    def all_issues(self) -> list[sqlite3.Row]:
+        return self.conn.execute(
+            "SELECT number, title, body, state, labels FROM issues_fts WHERE repo = ?"
+            " ORDER BY CAST(number AS INTEGER)", (self.repo,),
+        ).fetchall()
+
     def search_docs(self, text: str, limit: int = 3) -> list[DocHit]:
         query = to_match_query(text)
         if not query:

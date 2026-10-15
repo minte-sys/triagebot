@@ -31,6 +31,13 @@ def test_openai_compat_embeddings_come_back_in_input_order() -> None:
     assert json.loads(seen[0].content) == {"model": "emb", "input": ["a", "b"]}
 
 
+def test_embeddings_without_index_keep_list_order() -> None:
+    payload = {"data": [{"embedding": [1.0]}, {"embedding": [2.0]}]}  # Gemini leaves out index
+    embedder = OpenAICompatEmbedder("https://x.test", "KEY", "emb",
+                                    http=fake_http(200, payload, []))
+    assert embedder.embed(["a", "b"]) == [[1.0], [2.0]]
+
+
 def test_ollama_embeddings() -> None:
     seen = []
     embedder = OllamaEmbedder("http://local", "nomic",

@@ -7,14 +7,18 @@ import hashlib
 import json
 import math
 import sqlite3
+import time
+from collections.abc import Callable
 from typing import Protocol
 
 import httpx
 
 from triagebot.config import EmbeddingConfig, require_secret
 from triagebot.llm.base import LLMError
+from triagebot.llm.retry import RetryPolicy, http_error, with_retries
 
 BATCH = 50
+LOOKUP_CHUNK = 500
 
 
 class Embedder(Protocol):
@@ -37,10 +41,10 @@ class OpenAICompatEmbedder:
         data = _post(self.http, f"{self.base_url}/embeddings",
                      {"model": self.model, "input": texts}, self.headers)
         try:
-           rows = data["data"]
-           if all("index" in row for row in rows):
+            rows = data["data"]
+            if all("index" in row for row in rows):
                 rows = sorted(rows, key=lambda row: row["index"])
-           return [row["embedding"] for row in rows]
+            return [row["embedding"] for row in rows]
         except (KeyError, TypeError) as exc:
             raise LLMError(f"Unexpected embeddings response: {str(data)[:300]}") from exc
 
@@ -65,10 +69,12 @@ class OllamaEmbedder:
 def _post(http: httpx.Client, url: str, body: dict, headers: dict) -> dict:
     try:
         resp = http.post(url, json=body, headers=headers)
+    except httpx.ConnectError as exc:
+        raise LLMError(f"Cannot reach {url}: {exc}") from exc
     except httpx.HTTPError as exc:
-        raise LLMError(f"Embedding request failed: {exc}") from exc
+        raise LLMError(f"Embedding request failed: {exc!r}", retryable=True) from exc
     if resp.status_code >= 400:
-        raise LLMError(f"HTTP {resp.status_code}: {resp.text[:300]}", resp.status_code)
+        raise http_error(resp.status_code, resp.text, dict(resp.headers))
     return resp.json()
 
 
@@ -77,6 +83,20 @@ def make_embedder(cfg: EmbeddingConfig) -> Embedder:
         return OllamaEmbedder(cfg.base_url, cfg.model, cfg.timeout_s)
     api_key = require_secret(cfg.api_key, cfg.api_key_env)
     return OpenAICompatEmbedder(cfg.base_url, api_key, cfg.model, cfg.timeout_s)
+
+
+class RetryingEmbedder:
+    def __init__(self, inner: Embedder, policy: RetryPolicy,
+                 say: Callable[[str], None] | None = None,
+                 sleep: Callable[[float], None] = time.sleep) -> None:
+        self.inner = inner
+        self.model = inner.model
+        self.policy = policy
+        self.say = say
+        self.sleep = sleep
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        return with_retries(lambda: self.inner.embed(texts), self.policy, self.say, self.sleep)
 
 
 def cosine(a: list[float], b: list[float]) -> float:
@@ -98,12 +118,14 @@ class CachedEmbedder:
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         keys = [hashlib.sha256(t.encode("utf-8")).hexdigest() for t in texts]
-        found = {
-            r["text_hash"]: json.loads(r["vector"])
-            for r in self.conn.execute(
+        found: dict[str, list[float]] = {}
+        unique = list(dict.fromkeys(keys))
+        for start in range(0, len(unique), LOOKUP_CHUNK):  # SQLite limits ? per query
+            chunk = unique[start:start + LOOKUP_CHUNK]
+            rows = self.conn.execute(
                 f"SELECT text_hash, vector FROM embeddings WHERE model = ? AND text_hash IN"
-                f" ({', '.join('?' * len(keys))})", (self.model, *keys))
-        } if keys else {}
+                f" ({', '.join('?' * len(chunk))})", (self.model, *chunk))
+            found.update({r["text_hash"]: json.loads(r["vector"]) for r in rows})
         missing = list(dict.fromkeys(
             (k, t) for k, t in zip(keys, texts, strict=True) if k not in found))
         for start in range(0, len(missing), BATCH):
