@@ -64,7 +64,7 @@ def with_retries(
                 raise
             attempt += 1
             if say:
-                say(f"      {str(exc)[:80]}... retry {attempt}/{policy.max_retries} "
+                say(f"      {' '.join(str(exc).split())[:80]}... retry {attempt}/{policy.max_retries} "
                     f"in {wait:.0f} s")
             sleep(wait)
 

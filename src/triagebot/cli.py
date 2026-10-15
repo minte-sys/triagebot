@@ -170,7 +170,8 @@ def cmd_run(args: argparse.Namespace) -> int:
                            issue, labels, budget, mode, corrections=format_corrections(past),
                            prompt_version=cfg.agent.prompt_version)
         print(f"\nRun {result.run_id}: {result.status}"
-              + (f" ({result.stop_reason})" if result.stop_reason else "")
+              + (f" ({' '.join(result.stop_reason.split())[:200]})" if result.stop_reason
+                 else "")
               + f", {result.steps} model calls, tokens in/out "
               f"{result.tokens_in}/{result.tokens_out}")
         print(f"Full trace: triagebot trace {result.run_id}")
