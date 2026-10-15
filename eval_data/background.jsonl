@@ -1,0 +1,25 @@
+{"number": 1, "title": "Crash with KeyError: 'llm' when config.toml is empty", "body": "I created an empty config.toml and ran repobrief run. It crashed with KeyError: 'llm'.", "state": "closed", "labels": ["bug"]}
+{"number": 2, "title": "HTTP 403 rate limit exceeded on large repositories", "body": "Summarizing big repositories fails halfway with HTTP 403 rate limit exceeded.", "state": "open", "labels": ["bug"]}
+{"number": 3, "title": "Add dark mode to the web viewer", "body": "The report page is very bright. A dark theme would be easier on the eyes at night.", "state": "open", "labels": ["enhancement"]}
+{"number": 4, "title": "UnicodeEncodeError when printing a summary on Windows", "body": "On Windows the summary crashes with UnicodeEncodeError: 'charmap' codec can't encode character.", "state": "closed", "labels": ["bug"]}
+{"number": 5, "title": "Support Python 3.13", "body": "Installation fails on Python 3.13 because a dependency has no wheel yet.", "state": "open", "labels": ["enhancement"]}
+{"number": 6, "title": "Export reports as PDF", "body": "I need to attach summaries to emails. A --format pdf option would help.", "state": "open", "labels": ["enhancement"]}
+{"number": 7, "title": "Typo in installation guide", "body": "The Windows section says pip instal instead of pip install.", "state": "closed", "labels": ["documentation"]}
+{"number": 8, "title": "Port 8000 already in use", "body": "repobrief serve fails with OSError: address already in use. How do I pick another port?", "state": "closed", "labels": ["question"]}
+{"number": 9, "title": "Model request times out on long READMEs", "body": "Repositories with a very long README fail with ReadTimeout while waiting for the model.", "state": "open", "labels": ["bug"]}
+{"number": 10, "title": "Summaries ignore files in subfolders", "body": "The file tree section only lists files in the top folder of the repository.", "state": "open", "labels": ["bug"]}
+{"number": 11, "title": "Allow choosing the summary language", "body": "I would like summaries in Spanish. Maybe a --language option?", "state": "open", "labels": ["enhancement"]}
+{"number": 12, "title": "CSV export puts everything in one column in Excel", "body": "When I open the csv export in Excel all text is in column A.", "state": "open", "labels": ["bug"]}
+{"number": 13, "title": "SSL CERTIFICATE_VERIFY_FAILED behind company proxy", "body": "At work every run fails with ssl.SSLCertVerificationError CERTIFICATE_VERIFY_FAILED.", "state": "closed", "labels": ["question"]}
+{"number": 14, "title": "Document the [web] section of config.toml", "body": "The configuration guide does not explain the [web] settings.", "state": "closed", "labels": ["documentation"]}
+{"number": 15, "title": "Private repositories return 404", "body": "repobrief run on my private repository says 404 Not Found, public ones work.", "state": "closed", "labels": ["question"]}
+{"number": 16, "title": "Add a --quiet flag", "body": "I run repobrief from scripts and would like to turn off the progress output.", "state": "closed", "labels": ["enhancement"]}
+{"number": 17, "title": "Web viewer shows a blank page in Safari", "body": "repobrief serve works in Chrome and Firefox, but Safari only shows a white page.", "state": "open", "labels": ["bug"]}
+{"number": 18, "title": "JSON export escapes non-ASCII characters", "body": "Names like Müller become M\\u00fcller in the json export.", "state": "closed", "labels": ["bug"]}
+{"number": 19, "title": "Support GitLab repositories", "body": "Our code is on GitLab. It would be great if repobrief could summarize GitLab projects.", "state": "open", "labels": ["enhancement"]}
+{"number": 20, "title": "Progress bar freezes at 99%", "body": "The progress bar stops at 99% for several minutes before the summary appears.", "state": "open", "labels": ["bug"]}
+{"number": 21, "title": "Crash when the repository has no README", "body": "repobrief run crashes with FileNotFoundError when the repository has no README file.", "state": "open", "labels": ["bug"]}
+{"number": 22, "title": "Explain how to use a local model", "body": "The installation guide should explain how to use Ollama.", "state": "closed", "labels": ["documentation"]}
+{"number": 23, "title": "Cache GitHub responses between runs", "body": "Running twice on the same repository downloads everything again.", "state": "open", "labels": ["enhancement"]}
+{"number": 24, "title": "repobrief is not recognized as a command", "body": "After pip install, PowerShell says repobrief is not recognized as the name of a cmdlet.", "state": "closed", "labels": ["question"]}
+{"number": 25, "title": "Summary cuts off mid-sentence", "body": "The last paragraph of the summary often stops in the middle of a sentence.", "state": "open", "labels": ["bug"]}

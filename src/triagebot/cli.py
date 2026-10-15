@@ -5,9 +5,11 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 
 from triagebot.agent.budget import Budget
 from triagebot.agent.loop import run_agent
+from triagebot.agent.prompts import PROMPTS
 from triagebot.autonomy.corrections import CorrectionStore, format_corrections
 from triagebot.autonomy.executor import Executor
 from triagebot.autonomy.gate import Gate
@@ -17,6 +19,9 @@ from triagebot.autonomy.review import describe, review
 from triagebot.autonomy.undo import UndoError, undo
 from triagebot.config import BACKENDS, TOOL_MODES, Config, ConfigError, load_config
 from triagebot.db import connect
+from triagebot.eval.dataset import DatasetError, load_dataset
+from triagebot.eval.report import format_report
+from triagebot.eval.runner import ResultStore, Setup, run_eval
 from triagebot.github import make_github
 from triagebot.github.client import GitHubError
 from triagebot.llm import make_client
@@ -124,7 +129,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     if past:
         print(f"Including {len(past)} past corrections in the prompt")
     result = run_agent(client, registry, Recorder(conn, echo=print), repo, issue,
-                       labels, budget, mode, corrections=format_corrections(past))
+                       labels, budget, mode, corrections=format_corrections(past),
+                       prompt_version=cfg.agent.prompt_version)
 
     print(f"\nRun {result.run_id}: {result.status}"
           + (f" ({result.stop_reason})" if result.stop_reason else "")
@@ -209,7 +215,7 @@ def cmd_trust(args: argparse.Namespace) -> int:
     t = cfg.trust
     print(f"Promote after {t.min_decisions} decisions with {t.min_approval_pct}% of the last "
           f"{t.window} approved unchanged.")
-    print(f"In auto mode, audit every {t.audit_every}th action; demote below "
+    print(f"In auto mode, hold 1 in every {t.audit_every} actions for an audit; demote below "
           f"{t.min_audit_accuracy_pct}% of the last {t.audit_window} audits, or on any undo.")
     if not t.auto_enabled:
         print("Auto mode is off in config ([trust] auto_enabled = false), so everything is "
@@ -221,6 +227,25 @@ def cmd_trust(args: argparse.Namespace) -> int:
         audits = f"{s.audits_passed}/{s.audits}" if s.audits else "-"
         print(f"{s.action_type:<14}{s.mode:<9}{s.decisions:>10}  {approved:>13}  {audits:>13}")
     print("\nCounts start again from zero whenever an action type changes mode.")
+    return 0
+
+
+def cmd_eval(args: argparse.Namespace) -> int:
+    """Triage the eval set and score the decisions. Nothing is written to GitHub."""
+    cfg = load_config(args.config, backend=args.backend)
+    ds = load_dataset(Path(args.config).parent / args.data)
+    conn = connect(cfg.search.db_path)
+    store = ResultStore(conn)
+    setup = Setup(cfg.llm.model, args.prompt or cfg.agent.prompt_version,
+                  args.tool_mode or cfg.agent.tool_mode)
+    if args.restart:
+        print(f"Deleted {store.clear(setup)} earlier results for {setup}")
+    if not args.report:
+        budget = Budget(cfg.agent.max_steps, cfg.agent.max_seconds, cfg.agent.max_tokens)
+        run_eval(make_client(cfg.llm), ds, store, Recorder(conn), setup, budget,
+                 args.limit, args.pause)
+        print()
+    print(format_report(ds, store.outcomes(ds.cases), setup))
     return 0
 
 
@@ -286,6 +311,16 @@ def build_parser() -> argparse.ArgumentParser:
     trust.add_argument("--demote", choices=ACTION_TYPES, help="send an action type back to review")
     trust.add_argument("--history", choices=ACTION_TYPES, help="show recent decisions")
     trust.set_defaults(func=cmd_trust)
+    ev = sub.add_parser("eval", help="triage the eval set and score it (writes nothing)")
+    ev.add_argument("--limit", type=int, help="run at most this many new cases")
+    ev.add_argument("--prompt", choices=list(PROMPTS), help="override agent.prompt_version")
+    ev.add_argument("--tool-mode", choices=TOOL_MODES, help="override agent.tool_mode")
+    ev.add_argument("--pause", type=float, default=0, help="seconds to wait between cases")
+    ev.add_argument("--report", action="store_true", help="only print the scores, run nothing")
+    ev.add_argument("--restart", action="store_true",
+                    help="delete this setup's results first and start again")
+    ev.add_argument("--data", default="eval_data", help="eval data folder, next to config.toml")
+    ev.set_defaults(func=cmd_eval)
     trace = sub.add_parser("trace", help="show a run step by step, or list recent runs")
     trace.add_argument("run_id", type=int, nargs="?")
     trace.set_defaults(func=cmd_trace)
@@ -300,7 +335,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)
-    except (ConfigError, LLMError, GitHubError) as exc:
+    except (ConfigError, LLMError, GitHubError, DatasetError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 2
 

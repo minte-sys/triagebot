@@ -96,6 +96,21 @@ CREATE TABLE IF NOT EXISTS corrections (
     reason TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS eval_results (
+    id INTEGER PRIMARY KEY,
+    case_number INTEGER NOT NULL,
+    model TEXT NOT NULL,
+    prompt_version TEXT NOT NULL,
+    tool_mode TEXT NOT NULL,
+    run_id INTEGER REFERENCES runs(id),
+    status TEXT NOT NULL,
+    decision_json TEXT,
+    steps INTEGER NOT NULL,
+    tokens INTEGER NOT NULL,
+    seconds REAL NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (case_number, model, prompt_version, tool_mode)
+);
 """
 
 # Columns added after a table was first created. CREATE TABLE IF NOT EXISTS leaves

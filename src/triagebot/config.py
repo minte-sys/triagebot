@@ -49,6 +49,7 @@ class AgentConfig:
     max_seconds: float
     max_tokens: int
     tool_mode: str
+    prompt_version: str
 
 
 @dataclass(frozen=True)
@@ -139,14 +140,22 @@ def _load_search(search: dict, base: Path) -> SearchConfig:
 
 
 def _load_agent(agent: dict) -> AgentConfig:
+    from triagebot.agent.prompts import PROMPT_VERSION, PROMPTS  # avoids an import cycle
+
     mode = agent.get("tool_mode", "native")
     if mode not in TOOL_MODES:
         raise ConfigError(f"Unknown agent.tool_mode {mode!r}. Use one of: {', '.join(TOOL_MODES)}")
+    version = agent.get("prompt_version", PROMPT_VERSION)
+    if version not in PROMPTS:
+        raise ConfigError(
+            f"Unknown agent.prompt_version {version!r}. Use one of: {', '.join(PROMPTS)}"
+        )
     return AgentConfig(
         max_steps=int(agent.get("max_steps", 8)),
         max_seconds=float(agent.get("max_seconds", 180)),
         max_tokens=int(agent.get("max_tokens", 40_000)),
         tool_mode=mode,
+        prompt_version=version,
     )
 
 

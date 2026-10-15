@@ -29,6 +29,8 @@ max_seconds = 300
 max_tokens = 40000
 # "native" uses the model's tool calling; "json" asks for tool calls as JSON text
 tool_mode = "native"
+# which system prompt to use; older versions are kept so eval results can be compared
+prompt_version = "v3"
 
 [safety]
 # true: review shows what would happen but writes nothing to GitHub

@@ -79,6 +79,13 @@ def test_agent_defaults_and_tool_mode_validation(config_file: Path) -> None:
         load_config(config_file)
 
 
+def test_prompt_version_default_and_validation(config_file: Path) -> None:
+    assert load_config(config_file).agent.prompt_version == "v3"
+    config_file.write_text(TOML + '\n[agent]\nprompt_version = "v9"\n')
+    with pytest.raises(ConfigError, match="prompt_version"):
+        load_config(config_file)
+
+
 def test_trust_defaults_and_validation(config_file: Path) -> None:
     trust = load_config(config_file).trust
     assert (trust.auto_enabled, trust.min_decisions, trust.min_approval_pct) == (False, 20, 90)
