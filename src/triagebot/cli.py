@@ -8,9 +8,13 @@ import sys
 
 from triagebot.agent.budget import Budget
 from triagebot.agent.loop import run_agent
+from triagebot.autonomy.corrections import CorrectionStore, format_corrections
 from triagebot.autonomy.executor import Executor
-from triagebot.autonomy.proposals import ProposalStore
+from triagebot.autonomy.gate import Gate
+from triagebot.autonomy.ledger import Ledger
+from triagebot.autonomy.proposals import ACTION_TYPES, ProposalStore
 from triagebot.autonomy.review import describe, review
+from triagebot.autonomy.undo import UndoError, undo
 from triagebot.config import BACKENDS, TOOL_MODES, Config, ConfigError, load_config
 from triagebot.db import connect
 from triagebot.github import make_github
@@ -113,10 +117,14 @@ def cmd_run(args: argparse.Namespace) -> int:
     registry = ToolRegistry(get_issue + build_search_tools(index, exclude_issue=issue.number))
     budget = Budget(cfg.agent.max_steps, cfg.agent.max_seconds, cfg.agent.max_tokens)
     mode = args.tool_mode or cfg.agent.tool_mode
+    labels = gh.list_labels(repo)
+    past = CorrectionStore(conn, repo).recent()
 
     print(f"Triaging #{issue.number} \"{issue.title}\" with {client.model} ({mode} tool calls)")
+    if past:
+        print(f"Including {len(past)} past corrections in the prompt")
     result = run_agent(client, registry, Recorder(conn, echo=print), repo, issue,
-                       gh.list_labels(repo), budget, mode)
+                       labels, budget, mode, corrections=format_corrections(past))
 
     print(f"\nRun {result.run_id}: {result.status}"
           + (f" ({result.stop_reason})" if result.stop_reason else "")
@@ -125,15 +133,21 @@ def cmd_run(args: argparse.Namespace) -> int:
     if not result.decision:
         return 1
 
-    proposals = ProposalStore(conn, repo).create_from_decision(
-        result.run_id, issue.number, result.decision, issue.labels
-    )
+    store = ProposalStore(conn, repo)
+    proposals = store.create_from_decision(result.run_id, issue.number, result.decision,
+                                           issue.labels)
     print(f"\nReasoning: {result.decision.reasoning}")
     if not proposals:
         print("No actions proposed.")
-    for p in proposals:
+        return 0
+    executor = Executor(gh, conn, repo, {lb.name for lb in labels}, dry_run=cfg.safety.dry_run)
+    gate = Gate(store, Ledger(conn, repo, cfg.trust), executor, cfg.trust.auto_enabled)
+    routed = gate.route(proposals)
+    for r in routed:
+        p = r.proposal
         print(f"Proposal {p.id} ({p.action_type}): {describe(p, p.payload)}")
-    if proposals:
+        print(f"      -> {r.message}")
+    if any(r.route in ("review", "audit") for r in routed):
         print("Review them with: triagebot review")
     return 0
 
@@ -147,9 +161,62 @@ def cmd_review(args: argparse.Namespace) -> int:
     labels = {lb.name for lb in gh.list_labels(repo)}
     executor = Executor(gh, conn, repo, labels, dry_run=cfg.safety.dry_run)
     try:
-        review(ProposalStore(conn, repo), executor)
+        review(ProposalStore(conn, repo), executor, ledger=Ledger(conn, repo, cfg.trust),
+               corrections=CorrectionStore(conn, repo))
     except (EOFError, KeyboardInterrupt):
         print("\nStopped. Decisions made so far are saved.")
+    return 0
+
+
+def cmd_undo(args: argparse.Namespace) -> int:
+    """Reverse what an executed proposal wrote to GitHub, and count it against trust."""
+    cfg = load_config(args.config, backend=args.backend)
+    repo = cfg.github.repo
+    conn = connect(cfg.search.db_path)
+    store = ProposalStore(conn, repo)
+    proposal = store.get(args.proposal_id)
+    if proposal is None:
+        print(f"No proposal {args.proposal_id} for {repo}")
+        return 1
+    try:
+        result = undo(proposal, make_github(cfg.github), store, Ledger(conn, repo, cfg.trust),
+                      CorrectionStore(conn, repo), cfg.safety.dry_run, args.reason)
+    except UndoError as exc:
+        print(exc)
+        return 1
+    for step in result.steps:
+        print(f"{'Would' if result.dry_run else 'Done:'} {step}")
+    if result.dry_run:
+        print("Dry run: nothing changed. Set dry_run = false in config.toml to undo for real.")
+    if result.mode_change:
+        print(f"Trust: {result.mode_change}")
+    return 0
+
+
+def cmd_trust(args: argparse.Namespace) -> int:
+    """Show what each action type has earned, or demote one by hand."""
+    cfg = load_config(args.config, backend=args.backend)
+    ledger = Ledger(connect(cfg.search.db_path), cfg.github.repo, cfg.trust)
+    if args.demote:
+        change = ledger.demote(args.demote)
+        print(f"Trust: {change}" if change else f"{args.demote} is already in propose mode")
+        return 0
+
+    t = cfg.trust
+    print(f"Promote after {t.min_decisions} decisions with {t.min_approval_pct}% of the last "
+          f"{t.window} approved unchanged.")
+    print(f"In auto mode, audit every {t.audit_every}th action; demote below "
+          f"{t.min_audit_accuracy_pct}% of the last {t.audit_window} audits, or on any undo.")
+    if not t.auto_enabled:
+        print("Auto mode is off in config ([trust] auto_enabled = false), so everything is "
+              "reviewed.")
+    print(f"\n{'action':<14}{'mode':<9}{'decisions':>10}  {'approved':>13}  {'audits passed':>13}")
+    for s in ledger.status():
+        approved = (f"{s.approved}/{s.in_window} ({100 * s.approved // s.in_window}%)"
+                    if s.in_window else "-")
+        audits = f"{s.audits_passed}/{s.audits}" if s.audits else "-"
+        print(f"{s.action_type:<14}{s.mode:<9}{s.decisions:>10}  {approved:>13}  {audits:>13}")
+    print("\nCounts start again from zero whenever an action type changes mode.")
     return 0
 
 
@@ -207,6 +274,13 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("review", help="approve, edit or reject pending proposals").set_defaults(
         func=cmd_review
     )
+    undo_cmd = sub.add_parser("undo", help="reverse what an executed proposal wrote to GitHub")
+    undo_cmd.add_argument("proposal_id", type=int)
+    undo_cmd.add_argument("--reason", default="", help="why it was wrong; the bot learns from it")
+    undo_cmd.set_defaults(func=cmd_undo)
+    trust = sub.add_parser("trust", help="show the trust each action type has earned")
+    trust.add_argument("--demote", choices=ACTION_TYPES, help="send an action type back to review")
+    trust.set_defaults(func=cmd_trust)
     trace = sub.add_parser("trace", help="show a run step by step, or list recent runs")
     trace.add_argument("run_id", type=int, nargs="?")
     trace.set_defaults(func=cmd_trace)

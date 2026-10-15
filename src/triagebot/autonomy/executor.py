@@ -111,13 +111,19 @@ class Executor:
                 return existing.id
         return self.gh.create_comment(self.repo, proposal.issue_number, f"{body}\n\n{tag}").id
 
+    def _add_labels(self, issue_number: int, labels: list[str]) -> list[str]:
+        """Add labels and return only the ones the issue didn't already have, for undo."""
+        before = set(self.gh.get_issue(self.repo, issue_number, max_comments=0).labels)
+        self.gh.add_labels(self.repo, issue_number, labels)
+        return [lb for lb in labels if lb not in before]
+
     def _do_labels(self, proposal: Proposal, payload: dict[str, Any]) -> ExecutionResult:
         labels = payload["labels"]
         description = f"add labels {labels} to #{proposal.issue_number}"
         if self.dry_run:
             return ExecutionResult(True, description)
-        self.gh.add_labels(self.repo, proposal.issue_number, labels)
-        return ExecutionResult(False, description, {"labels_added": labels})
+        added = self._add_labels(proposal.issue_number, labels)
+        return ExecutionResult(False, description, {"labels_added": added})
 
     def _do_duplicate(self, proposal: Proposal, payload: dict[str, Any]) -> ExecutionResult:
         target = payload["duplicate_of"]
@@ -127,10 +133,9 @@ class Executor:
         if self.dry_run:
             return ExecutionResult(True, description)
         comment_id = self._post_once(proposal, f"Duplicate of #{target}")
-        if label:
-            self.gh.add_labels(self.repo, proposal.issue_number, label)
+        added = self._add_labels(proposal.issue_number, label) if label else []
         return ExecutionResult(False, description,
-                               {"comment_id": comment_id, "labels_added": label})
+                               {"comment_id": comment_id, "labels_added": added})
 
     def _do_comment(self, proposal: Proposal, payload: dict[str, Any]) -> ExecutionResult:
         body = self._comment_body(proposal, payload)

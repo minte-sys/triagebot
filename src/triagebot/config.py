@@ -57,12 +57,25 @@ class SafetyConfig:
 
 
 @dataclass(frozen=True)
+class TrustConfig:
+    auto_enabled: bool = False
+    min_decisions: int = 20
+    window: int = 20
+    min_approval_pct: int = 90
+    audit_every: int = 5
+    audit_window: int = 10
+    min_audits: int = 5
+    min_audit_accuracy_pct: int = 80
+
+
+@dataclass(frozen=True)
 class Config:
     llm: LLMConfig
     github: GitHubConfig
     search: SearchConfig
     agent: AgentConfig
     safety: SafetyConfig
+    trust: TrustConfig = TrustConfig()
 
 
 def load_config(path: str | Path = "config.toml", backend: str | None = None) -> Config:
@@ -79,6 +92,7 @@ def load_config(path: str | Path = "config.toml", backend: str | None = None) ->
         search=_load_search(data.get("search", {}), path.parent),
         agent=_load_agent(data.get("agent", {})),
         safety=SafetyConfig(dry_run=bool(data.get("safety", {}).get("dry_run", True))),
+        trust=_load_trust(data.get("trust", {})),
     )
 
 
@@ -134,6 +148,20 @@ def _load_agent(agent: dict) -> AgentConfig:
         max_tokens=int(agent.get("max_tokens", 40_000)),
         tool_mode=mode,
     )
+
+
+def _load_trust(trust: dict) -> TrustConfig:
+    defaults = TrustConfig()
+    values = {}
+    for name in ("min_decisions", "window", "min_approval_pct", "audit_every", "audit_window",
+                 "min_audits", "min_audit_accuracy_pct"):
+        value = trust.get(name, getattr(defaults, name))
+        if not isinstance(value, int) or value < 1:
+            raise ConfigError(f"trust.{name} must be a whole number of at least 1, got {value!r}")
+        if name.endswith("_pct") and value > 100:
+            raise ConfigError(f"trust.{name} is a percentage and must be at most 100")
+        values[name] = value
+    return TrustConfig(auto_enabled=bool(trust.get("auto_enabled", False)), **values)
 
 
 def require_secret(value: str | None, env_name: str | None) -> str:

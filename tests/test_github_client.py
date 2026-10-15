@@ -53,3 +53,14 @@ def test_write_calls_send_json_and_respect_allowlist(gh: GitHubClient, fake: Fak
     with pytest.raises(RepoNotAllowed):
         gh.create_comment("someone/else", 1, "hi")
     assert len(fake.requests) == 2
+
+
+def test_delete_calls_encode_label_names(gh: GitHubClient, fake: FakeGitHub) -> None:
+    gh.remove_label("me/sandbox", 3, "good first issue")
+    gh.delete_comment("me/sandbox", 55)
+    first, second = fake.requests
+    assert first.method == "DELETE"
+    assert first.url.raw_path.endswith(b"/issues/3/labels/good%20first%20issue")
+    assert second.url.path.endswith("/issues/comments/55")
+    with pytest.raises(RepoNotAllowed):
+        gh.delete_comment("someone/else", 1)

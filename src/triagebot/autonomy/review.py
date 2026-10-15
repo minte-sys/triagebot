@@ -6,7 +6,9 @@ from collections import Counter
 from collections.abc import Callable
 from typing import Any
 
+from triagebot.autonomy.corrections import CorrectionStore
 from triagebot.autonomy.executor import ExecutionRefused, Executor
+from triagebot.autonomy.ledger import Ledger
 from triagebot.autonomy.proposals import Proposal, ProposalStore
 from triagebot.github.client import GitHubError
 
@@ -42,7 +44,23 @@ def edit_payload(proposal: Proposal, ask: Ask) -> dict[str, Any] | None:
     return {"body": body} if body else None
 
 
-def review(store: ProposalStore, executor: Executor, ask: Ask = input, say: Say = print) -> Counter:
+def review(
+    store: ProposalStore,
+    executor: Executor,
+    ask: Ask = input,
+    say: Say = print,
+    ledger: Ledger | None = None,
+    corrections: CorrectionStore | None = None,
+) -> Counter:
+    def remember(proposal: Proposal, outcome: str, final: dict | None, reason: str = "") -> None:
+        if outcome != "approved" and corrections:
+            corrections.add(proposal, final, reason)
+        if ledger:
+            source = "audit" if proposal.audit else "review"
+            change = ledger.record(proposal.action_type, proposal.id, outcome, source, reason)
+            if change:
+                say(f"  Trust: {change}")
+
     pending = store.pending()
     counts: Counter = Counter()
     if not pending:
@@ -53,7 +71,7 @@ def review(store: ProposalStore, executor: Executor, ask: Ask = input, say: Say 
 
     for n, proposal in enumerate(pending, 1):
         say(f"\n[{n}/{len(pending)}] proposal {proposal.id}, issue #{proposal.issue_number}, "
-            f"{proposal.action_type}")
+            f"{proposal.action_type}" + (" (AUDIT)" if proposal.audit else ""))
         say(f"    {describe(proposal, proposal.payload)}")
         say(f"    why: {proposal.rationale}")
         choice = ask("  (a)pprove, (e)dit, (r)eject, (s)kip, (q)uit? ").strip().lower()[:1]
@@ -61,7 +79,9 @@ def review(store: ProposalStore, executor: Executor, ask: Ask = input, say: Say 
         if choice == "q":
             break
         if choice == "r":
-            store.decide(proposal.id, "rejected", reason=ask("  Reason (optional): ").strip())
+            reason = ask("  Reason (optional): ").strip()
+            store.decide(proposal.id, "rejected", reason=reason)
+            remember(proposal, "rejected", None, reason)
             counts["rejected"] += 1
             continue
         if choice not in ("a", "e"):
@@ -91,6 +111,7 @@ def review(store: ProposalStore, executor: Executor, ask: Ask = input, say: Say 
             continue
         store.decide(proposal.id, status, payload if status == "edited" else None)
         say(f"  {'Would' if result.dry_run else 'Done:'} {result.description}")
+        remember(proposal, status, payload)
         counts[status] += 1
 
     say("\n" + ", ".join(f"{k} {v}" for k, v in sorted(counts.items())) if counts else "")

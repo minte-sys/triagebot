@@ -77,3 +77,14 @@ def test_agent_defaults_and_tool_mode_validation(config_file: Path) -> None:
     config_file.write_text(TOML + '\n[agent]\ntool_mode = "telepathy"\n')
     with pytest.raises(ConfigError, match="tool_mode"):
         load_config(config_file)
+
+
+def test_trust_defaults_and_validation(config_file: Path) -> None:
+    trust = load_config(config_file).trust
+    assert (trust.auto_enabled, trust.min_decisions, trust.min_approval_pct) == (False, 20, 90)
+    config_file.write_text(TOML + "\n[trust]\nmin_approval_pct = 150\n")
+    with pytest.raises(ConfigError, match="at most 100"):
+        load_config(config_file)
+    config_file.write_text(TOML + "\n[trust]\naudit_every = 0\n")
+    with pytest.raises(ConfigError, match="audit_every"):
+        load_config(config_file)

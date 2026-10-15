@@ -42,12 +42,16 @@ def run_agent(
     budget: Budget,
     tool_mode: ToolMode = "native",
     clock: Callable[[], float] = time.monotonic,
+    corrections: str = "",
 ) -> RunResult:
     specs = [*registry.specs(), FINISH]
     system = system_prompt(repo)
     if tool_mode == "json":
         system += "\n\n" + json_instructions(specs)
-    messages = [Message("system", system), Message("user", issue_prompt(issue, labels))]
+    messages = [
+        Message("system", system),
+        Message("user", issue_prompt(issue, labels, corrections)),
+    ]
     repo_labels = {lb.name for lb in labels}
 
     run_id = recorder.start_run(repo, issue.number, client.model, PROMPT_VERSION, tool_mode)

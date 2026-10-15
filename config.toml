@@ -33,3 +33,18 @@ tool_mode = "native"
 [safety]
 # true: review shows what would happen but writes nothing to GitHub
 dry_run = true
+
+[trust]
+# false: every proposal waits for review, even for action types that earned auto mode
+auto_enabled = false
+# promote an action type after min_decisions reviews, if min_approval_pct of the
+# last `window` were approved unchanged
+min_decisions = 20
+window = 20
+min_approval_pct = 90
+# in auto mode, hold every audit_every-th action for review; demote if fewer than
+# min_audit_accuracy_pct of the last audit_window audits passed (once there are min_audits)
+audit_every = 5
+audit_window = 10
+min_audits = 5
+min_audit_accuracy_pct = 80

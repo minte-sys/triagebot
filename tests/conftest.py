@@ -34,6 +34,8 @@ class FakeGitHub:
     def handler(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         path = request.url.path
+        if request.method == "DELETE":
+            return httpx.Response(204) if "/comments/" in path else httpx.Response(200, json=[])
         if request.method == "POST":
             body = json.loads(request.content)
             if path.endswith("/labels"):

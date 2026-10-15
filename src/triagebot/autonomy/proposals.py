@@ -28,13 +28,18 @@ class Proposal:
     rationale: str
     status: str
     final_payload: dict[str, Any] | None = None
+    audit: bool = False
 
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> Proposal:
         final = row["final_payload_json"]
         return cls(row["id"], row["run_id"], row["repo"], row["issue_number"], row["action_type"],
                    json.loads(row["payload_json"]), row["rationale"], row["status"],
-                   json.loads(final) if final else None)
+                   json.loads(final) if final else None, bool(row["audit"]))
+
+    @property
+    def executed_payload(self) -> dict[str, Any]:
+        return self.final_payload if self.final_payload is not None else self.payload
 
 
 def payloads_from_decision(decision: Decision, current_labels: list[str]) -> list[tuple[str, dict]]:
@@ -95,7 +100,7 @@ class ProposalStore:
     def decide(
         self, proposal_id: int, status: str, final_payload: dict | None = None, reason: str = ""
     ) -> None:
-        if status not in ("approved", "edited", "rejected", "failed"):
+        if status not in ("approved", "edited", "rejected", "failed", "auto"):
             raise ValueError(f"Unknown status {status!r}")
         with self.conn:
             self.conn.execute(
@@ -103,4 +108,15 @@ class ProposalStore:
                 " decided_at = ? WHERE id = ? AND status = 'pending'",
                 (status, json.dumps(final_payload) if final_payload is not None else None,
                  reason, _now(), proposal_id),
+            )
+
+    def hold_for_audit(self, proposal_id: int) -> None:
+        with self.conn:
+            self.conn.execute("UPDATE proposals SET audit = 1 WHERE id = ?", (proposal_id,))
+
+    def mark_undone(self, proposal_id: int) -> None:
+        with self.conn:
+            self.conn.execute(
+                "UPDATE proposals SET status = 'undone' WHERE id = ? AND repo = ?",
+                (proposal_id, self.repo),
             )

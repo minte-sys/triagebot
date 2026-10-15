@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -74,6 +75,12 @@ class GitHubClient:
         data = self._post(f"/repos/{repo}/issues/{number}/comments", {"body": body}, repo)
         return Comment.from_api(data)
 
+    def remove_label(self, repo: str, number: int, label: str) -> None:
+        self._delete(f"/repos/{repo}/issues/{number}/labels/{quote(label, safe='')}", repo)
+
+    def delete_comment(self, repo: str, comment_id: int) -> None:
+        self._delete(f"/repos/{repo}/issues/comments/{comment_id}", repo)
+
     def _check_repo(self, repo: str) -> None:
         if repo not in self.allowed_repos:
             raise RepoNotAllowed(f"Repository {repo!r} is not in the allowlist")
@@ -85,6 +92,10 @@ class GitHubClient:
     def _post(self, path: str, body: dict[str, Any], repo: str) -> Any:
         self._check_repo(repo)
         return self._request(f"{self.base_url}{path}", None, method="POST", body=body).json()
+
+    def _delete(self, path: str, repo: str) -> None:
+        self._check_repo(repo)
+        self._request(f"{self.base_url}{path}", None, method="DELETE")
 
     def _paginate(
         self, path: str, params: dict[str, Any], repo: str, max_pages: int = 5

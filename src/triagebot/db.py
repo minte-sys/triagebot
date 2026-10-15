@@ -56,7 +56,8 @@ CREATE TABLE IF NOT EXISTS proposals (
     final_payload_json TEXT,
     reject_reason TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
-    decided_at TEXT
+    decided_at TEXT,
+    audit INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS executed_actions (
     id INTEGER PRIMARY KEY,
@@ -66,7 +67,42 @@ CREATE TABLE IF NOT EXISTS executed_actions (
     github_ref_json TEXT,
     executed_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS decisions (
+    id INTEGER PRIMARY KEY,
+    repo TEXT NOT NULL,
+    action_type TEXT NOT NULL,
+    proposal_id INTEGER REFERENCES proposals(id),
+    outcome TEXT NOT NULL,
+    source TEXT NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS action_modes (
+    repo TEXT NOT NULL,
+    action_type TEXT NOT NULL,
+    mode TEXT NOT NULL DEFAULT 'propose',
+    since_decision_id INTEGER NOT NULL DEFAULT 0,
+    actions_since_audit INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (repo, action_type)
+);
+CREATE TABLE IF NOT EXISTS corrections (
+    id INTEGER PRIMARY KEY,
+    repo TEXT NOT NULL,
+    proposal_id INTEGER NOT NULL REFERENCES proposals(id),
+    issue_number INTEGER NOT NULL,
+    action_type TEXT NOT NULL,
+    proposed_json TEXT NOT NULL,
+    corrected_json TEXT,
+    reason TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+);
 """
+
+# Columns added after a table was first created. CREATE TABLE IF NOT EXISTS leaves
+# existing tables alone, so older databases get them here.
+ADDED_COLUMNS = {
+    "proposals": [("audit", "INTEGER NOT NULL DEFAULT 0")],
+}
 
 
 def connect(path: str | Path) -> sqlite3.Connection:
@@ -83,4 +119,14 @@ def connect(path: str | Path) -> sqlite3.Connection:
                 f"This Python's SQLite ({sqlite3.sqlite_version}) was built without FTS5"
             ) from exc
         raise
+    _add_missing_columns(conn)
     return conn
+
+
+def _add_missing_columns(conn: sqlite3.Connection) -> None:
+    for table, columns in ADDED_COLUMNS.items():
+        existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        for name, definition in columns:
+            if name not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+    conn.commit()
