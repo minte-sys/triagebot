@@ -101,6 +101,11 @@ def test_manual_demote_and_history(ledger: Ledger) -> None:
     assert outcomes[:2] == ["demoted", "promoted"]
 
 
+def test_history_is_newest_first(ledger: Ledger) -> None:
+    feed(ledger, "approved", "rejected")
+    assert [r["outcome"] for r in ledger.history("labels")] == ["rejected", "approved"]
+
+    
 def gate_for(conn, ledger, gh, auto_enabled=True, dry_run=False):
     store = ProposalStore(conn, REPO)
     executor = Executor(gh, conn, REPO, LABELS, dry_run=dry_run)

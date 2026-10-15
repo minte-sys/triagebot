@@ -201,6 +201,10 @@ def cmd_trust(args: argparse.Namespace) -> int:
         change = ledger.demote(args.demote)
         print(f"Trust: {change}" if change else f"{args.demote} is already in propose mode")
         return 0
+    if args.history:
+        for row in ledger.history(args.history):
+            print(f"{row['created_at']}  {row['outcome']:<9} {row['source']:<7} {row['note']}")
+        return 0
 
     t = cfg.trust
     print(f"Promote after {t.min_decisions} decisions with {t.min_approval_pct}% of the last "
@@ -280,6 +284,7 @@ def build_parser() -> argparse.ArgumentParser:
     undo_cmd.set_defaults(func=cmd_undo)
     trust = sub.add_parser("trust", help="show the trust each action type has earned")
     trust.add_argument("--demote", choices=ACTION_TYPES, help="send an action type back to review")
+    trust.add_argument("--history", choices=ACTION_TYPES, help="show recent decisions")
     trust.set_defaults(func=cmd_trust)
     trace = sub.add_parser("trace", help="show a run step by step, or list recent runs")
     trace.add_argument("run_id", type=int, nargs="?")
