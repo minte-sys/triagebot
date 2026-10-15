@@ -1,0 +1,20 @@
+{"query": "Program won't start after I wiped the settings file", "duplicate_of": 1}
+{"query": "Too many calls to the code hosting site and now it blocks me", "duplicate_of": 2}
+{"query": "Black background option for the browser interface", "duplicate_of": 3}
+{"query": "Accented letters make the terminal output blow up on my PC", "duplicate_of": 4}
+{"query": "The newest interpreter release isn't supported yet", "duplicate_of": 5}
+{"query": "Save the overview as a printable document", "duplicate_of": 6}
+{"query": "Another app is already occupying the socket the viewer wants", "duplicate_of": 8}
+{"query": "A giant project description makes the AI call give up waiting", "duplicate_of": 9}
+{"query": "Nested directories are missing from the overview", "duplicate_of": 10}
+{"query": "Please write the overview in French", "duplicate_of": 11}
+{"query": "Spreadsheet software shows the comma-separated output in a single cell", "duplicate_of": 12}
+{"query": "Corporate network breaks HTTPS verification", "duplicate_of": 13}
+{"query": "Cannot reach my non-public projects", "duplicate_of": 15}
+{"query": "Option to hide all terminal chatter for automation", "duplicate_of": 16}
+{"query": "Apple's browser displays nothing on the local site", "duplicate_of": 17}
+{"query": "Umlauts turn into escape codes in the machine-readable export", "duplicate_of": 18}
+{"query": "Loading indicator hangs right before it finishes", "duplicate_of": 20}
+{"query": "Breaks when a project lacks the introduction markdown file", "duplicate_of": 21}
+{"query": "Keep downloaded data locally so the second run is faster", "duplicate_of": 23}
+{"query": "The final paragraph of the overview is truncated halfway", "duplicate_of": 25}

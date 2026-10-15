@@ -56,12 +56,20 @@ class Case(BaseModel):
                      len(comments), "", False, comments)
 
 
+class SearchQuery(BaseModel):
+    """A user's description of an older issue in their own words, for the search comparison."""
+
+    query: str
+    duplicate_of: int
+
+
 @dataclass
 class Dataset:
     cases: list[Case]
     background: list[Issue]
     labels: list[Label]
     docs: list[DocChunk]
+    search_queries: list[SearchQuery]
 
 
 def load_dataset(folder: Path) -> Dataset:
@@ -76,9 +84,10 @@ def load_dataset(folder: Path) -> Dataset:
         ]
         labels = [Label(d["name"], d["description"])
                   for d in json.loads((folder / "labels.json").read_text(encoding="utf-8"))]
+        queries = [SearchQuery.model_validate(r) for r in _jsonl(folder / "search_queries.jsonl")]
     except (OSError, KeyError, json.JSONDecodeError, ValidationError) as exc:
         raise DatasetError(f"Could not read the eval data in {folder}: {exc}") from exc
-    dataset = Dataset(cases, background, labels, load_docs(folder / "docs"))
+    dataset = Dataset(cases, background, labels, load_docs(folder / "docs"), queries)
     _check(dataset, folder)
     return dataset
 
@@ -106,3 +115,6 @@ def _check(ds: Dataset, folder: Path) -> None:
             raise DatasetError(f"{where}: duplicate_of #{e.duplicate_of} is not an older issue")
         if e.doc and not (folder / "docs" / e.doc).is_file():
             raise DatasetError(f"{where}: doc {e.doc} not found")
+    for q in ds.search_queries:
+        if q.duplicate_of not in older:
+            raise DatasetError(f"search query {q.query!r}: #{q.duplicate_of} is not an older issue")

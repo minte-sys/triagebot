@@ -157,7 +157,7 @@ def run_eval(
         head = f"[{n:>2}/{len(todo)}] #{case.number} {case.kind:<13}"
         if result.status == "error":
             errors += 1
-            say(f"{head} model error, will retry next time: {result.stop_reason[:200]}")
+            say(f"{head} model error, will retry next time: {' '.join(result.stop_reason.split())[:150]}")
             if errors >= ERRORS_IN_A_ROW:
                 say(f"Stopping after {errors} model errors in a row. Run the same command "
                     "later to continue; finished cases are kept.")

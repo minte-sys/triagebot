@@ -22,11 +22,13 @@ from triagebot.db import connect
 from triagebot.eval.dataset import DatasetError, load_dataset
 from triagebot.eval.report import format_report
 from triagebot.eval.runner import ResultStore, Setup, run_eval
+from triagebot.eval.search_eval import compare_search, format_search_report
 from triagebot.github import make_github
 from triagebot.github.client import GitHubError
 from triagebot.llm import make_client
 from triagebot.llm.base import LLMError, Message, ToolSpec
 from triagebot.search.docs import load_docs
+from triagebot.search.embeddings import CachedEmbedder, make_embedder
 from triagebot.search.keyword import SearchIndex
 from triagebot.tools.read_tools import build_read_tools
 from triagebot.tools.registry import ToolRegistry
@@ -249,6 +251,19 @@ def cmd_eval(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_eval_search(args: argparse.Namespace) -> int:
+    """Compare BM25, embeddings and both combined at finding the eval set's duplicates."""
+    cfg = load_config(args.config, backend=args.backend)
+    if cfg.embeddings is None:
+        raise ConfigError("No base_url for the embeddings backend in the [llm] section")
+    ds = load_dataset(Path(args.config).parent / args.data)
+    embedder = CachedEmbedder(make_embedder(cfg.embeddings), connect(cfg.search.db_path))
+    groups = compare_search(ds, embedder)
+    print(f"Embeddings from {embedder.model}: {embedder.new} new, {embedder.cached} from cache\n")
+    print(format_search_report(groups, args.details))
+    return 0
+
+
 def cmd_trace(args: argparse.Namespace) -> int:
     """Show one run step by step, or list recent runs."""
     cfg = load_config(args.config, backend=args.backend)
@@ -321,6 +336,10 @@ def build_parser() -> argparse.ArgumentParser:
                     help="delete this setup's results first and start again")
     ev.add_argument("--data", default="eval_data", help="eval data folder, next to config.toml")
     ev.set_defaults(func=cmd_eval)
+    es = sub.add_parser("eval-search", help="compare BM25 and embeddings at finding duplicates")
+    es.add_argument("--details", action="store_true", help="show the result for every query")
+    es.add_argument("--data", default="eval_data", help="eval data folder, next to config.toml")
+    es.set_defaults(func=cmd_eval_search)
     trace = sub.add_parser("trace", help="show a run step by step, or list recent runs")
     trace.add_argument("run_id", type=int, nargs="?")
     trace.set_defaults(func=cmd_trace)

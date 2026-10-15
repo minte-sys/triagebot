@@ -111,6 +111,12 @@ CREATE TABLE IF NOT EXISTS eval_results (
     created_at TEXT NOT NULL,
     UNIQUE (case_number, model, prompt_version, tool_mode)
 );
+CREATE TABLE IF NOT EXISTS embeddings (
+    model TEXT NOT NULL,
+    text_hash TEXT NOT NULL,
+    vector TEXT NOT NULL,
+    PRIMARY KEY (model, text_hash)
+);
 """
 
 # Columns added after a table was first created. CREATE TABLE IF NOT EXISTS leaves

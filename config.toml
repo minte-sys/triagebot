@@ -50,3 +50,13 @@ audit_every = 5
 audit_window = 10
 min_audits = 5
 min_audit_accuracy_pct = 80
+
+[embeddings]
+# uses the URL and key from [llm.<backend>]; --backend overrides it like it does for [llm]
+backend = "openai_compat"
+
+[embeddings.openai_compat]
+model = "gemini-embedding-001"
+
+[embeddings.ollama]
+model = "nomic-embed-text"

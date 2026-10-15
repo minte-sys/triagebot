@@ -29,6 +29,19 @@ class LLMConfig:
 
 
 @dataclass(frozen=True)
+class EmbeddingConfig:
+    backend: str
+    model: str
+    base_url: str
+    api_key_env: str | None
+    api_key: str | None
+    timeout_s: float
+
+
+EMBEDDING_MODELS = {"openai_compat": "gemini-embedding-001", "ollama": "nomic-embed-text"}
+
+
+@dataclass(frozen=True)
 class GitHubConfig:
     repo: str  # owner/name
     allowed_repos: tuple[str, ...]
@@ -77,6 +90,7 @@ class Config:
     agent: AgentConfig
     safety: SafetyConfig
     trust: TrustConfig = TrustConfig()
+    embeddings: EmbeddingConfig | None = None
 
 
 def load_config(path: str | Path = "config.toml", backend: str | None = None) -> Config:
@@ -94,6 +108,7 @@ def load_config(path: str | Path = "config.toml", backend: str | None = None) ->
         agent=_load_agent(data.get("agent", {})),
         safety=SafetyConfig(dry_run=bool(data.get("safety", {}).get("dry_run", True))),
         trust=_load_trust(data.get("trust", {})),
+        embeddings=_load_embeddings(data, backend),
     )
 
 
@@ -110,6 +125,27 @@ def _load_llm(llm: dict, backend: str | None) -> LLMConfig:
         api_key_env=key_env,
         api_key=os.environ.get(key_env) if key_env else None,
         temperature=float(llm.get("temperature", 0.0)),
+        timeout_s=float(llm.get("timeout_s", 60)),
+    )
+
+
+def _load_embeddings(data: dict, backend: str | None) -> EmbeddingConfig | None:
+    """Embeddings reuse the URL and key of the [llm.<backend>] section."""
+    section = data.get("embeddings", {})
+    chosen = backend or section.get("backend", "openai_compat")
+    if chosen not in BACKENDS:
+        raise ConfigError(f"Unknown embeddings backend {chosen!r}. Use one of: {', '.join(BACKENDS)}")
+    llm = data.get("llm", {})
+    connection = llm.get(chosen, {})
+    if "base_url" not in connection:
+        return None
+    key_env = connection.get("api_key_env")
+    return EmbeddingConfig(
+        backend=chosen,
+        model=section.get(chosen, {}).get("model", EMBEDDING_MODELS[chosen]),
+        base_url=connection["base_url"].rstrip("/"),
+        api_key_env=key_env,
+        api_key=os.environ.get(key_env) if key_env else None,
         timeout_s=float(llm.get("timeout_s", 60)),
     )
 
